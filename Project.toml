@@ -1,0 +1,9 @@
+name = "WoodburyIdentity"
+uuid = "49563772-d9e4-48b4-a8b6-4cbe661ead9f"
+authors = ["sebastianament "]
+version = "0.1.0"
+
+[deps]
+LazyInverse = "d0afe1cb-6484-4949-b9e9-61bc645ed6c7"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
