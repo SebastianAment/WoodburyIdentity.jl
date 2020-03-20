@@ -132,9 +132,6 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
     end
 end
 
-# TODO: remove for centralized definition
-# dot(x, A, y) = dot(x, A*y)
-
 # ternary dot
 function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVecOrMat)
     Ux = W.U'x     # memory allocation can be avoided with lazy arrays
