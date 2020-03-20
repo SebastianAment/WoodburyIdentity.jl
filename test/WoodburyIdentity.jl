@@ -31,6 +31,7 @@ end
     @test !issymmetric(getW(n, m))
     @test !ishermitian(getW(n, m))
     @test det(W) ≈ det(MatW)
+    @test logdet(W) ≈ logdet(MatW)
 
     # test solves
     @test W\(W*x) ≈ x

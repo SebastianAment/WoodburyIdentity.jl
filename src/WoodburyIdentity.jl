@@ -36,6 +36,7 @@ function checkdims(A, U, C, V)
 	return
 end
 
+# pseudo-constructor?
 # using ..MyFactorizations: LowRank
 # woodbury(A, R::LowRank, α::Real = 1) = woodbury(A, R.U, I, R.V, α)
 function woodbury(A, U, C, V, α::Real = 1, c::Real = 1)
@@ -95,9 +96,15 @@ end
 /(B::AbstractMatrix, W::Woodbury) = B*inverse(W)
 
 # TODO: check this and make it efficient
+# if W.A = W.C = I, this is Sylvesters determinant theorem
 function LinearAlgebra.det(W::Woodbury)
 	det(W.A) * det(W.C) * det(inv(W.C) + *(W.V, inverse(W.A), W.U))
 end
+
+function LinearAlgebra.logdet(W::Woodbury)
+	logdet(W.A) + logdet(W.C) + logdet(inv(W.C) + *(W.V, inverse(W.A), W.U))
+end
+# not a good way to compute logabsdet, except for log(abs(det(W))) (?)
 
 # TODO: implement this in WoodburyMatrices and PR
 # figure out constant c for which woodbury is most efficient
