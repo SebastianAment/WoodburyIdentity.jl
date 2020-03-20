@@ -4,7 +4,9 @@ using LinearAlgebra: checksquare
 
 # using LazyArrays: applied, ApplyMatrix
 import LazyInverse: inverse, Inverse
-const AbstractMatOrFac{T} = Union{AbstractMatrix{T}, Factorization{T}}
+
+using LinearAlgebraExtensions
+using LinearAlgebraExtensions: AbstractMatOrFac
 
 # TODO: pre-allocate intermediate storage
 
@@ -70,7 +72,7 @@ size(W::Woodbury) = size(W.A)
 size(W::Woodbury, d) = size(W.A, d)
 eltype(W::Woodbury{T}) where {T} = T
 issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
-ishermitian(W::Woodbury) = W.U ≡ W.V' && ishermitian(W.A) && ishermitian(W.C)
+ishermitian(W::Woodbury) = (W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
 Matrix(W::Woodbury) = W.A + W.α * *(W.U, W.C, W.V)
 
 function Base.deepcopy(W::Woodbury)
@@ -131,7 +133,7 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
 end
 
 # TODO: remove for centralized definition
-dot(x, A, y) = dot(x, A*y)
+# dot(x, A, y) = dot(x, A*y)
 
 # ternary dot
 function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVecOrMat)

@@ -28,6 +28,7 @@ end
     @test eltype(W) == Float64
     @test issymmetric(W)
     @test ishermitian(W)
+    @test ishermitian(Woodbury(W.A, W.U, W.C, copy(W.U)'))
     @test !issymmetric(getW(n, m))
     @test !ishermitian(getW(n, m))
     @test det(W) ≈ det(MatW)
