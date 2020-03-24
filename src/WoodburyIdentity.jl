@@ -39,8 +39,11 @@ function checkdims(A, U, C, V)
 end
 
 # pseudo-constructor?
-# using ..MyFactorizations: LowRank
-# woodbury(A, R::LowRank, α::Real = 1) = woodbury(A, R.U, I, R.V, α)
+using LinearAlgebraExtensions: LowRank
+function Woodbury(A::AbstractMatOrFac, L::LowRank, α::Real = 1)
+    Woodbury(A, L.U, 1.0*I(rank(L)), L.V, α)
+end
+woodbury(A, L::LowRank, α::Real = 1) = Woodbury(A, L, α)
 function woodbury(A, U, C, V, α::Real = 1, c::Real = 1)
     W = Woodbury(A, U, C, V, α)
     # size(W.U, 1) > c * size(W.U, 2) ? W : Matrix(W) # only return Woodbury if it is efficient
