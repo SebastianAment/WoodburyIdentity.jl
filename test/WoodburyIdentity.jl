@@ -1,7 +1,7 @@
 module TestWoodburyIdentity
 using WoodburyIdentity
 using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
-using WoodburyIdentity: inverse, Inverse
+using LazyInverse: inverse, Inverse
 using LinearAlgebra
 using Test
 
@@ -49,7 +49,7 @@ end
     m = 3
     W = getW(n, m, symmetric = true)
     MW = Matrix(W)
-    
+
     ## determinant
     @test det(W) ≈ det(MW)
     @test logdet(W) ≈ logdet(MW)
@@ -59,6 +59,14 @@ end
     @test logdet(inverse(W)) ≈ logdet(inv(MW))
     @test all(logabsdet(inverse(W)) .≈ logabsdet(Inverse(W)))
     @test all(logabsdet(inverse(W)) .≈ logabsdet(inv(MW)))
+
+    # indexing
+    for i in 1:n, j in 1:n
+        @test W[i, j] ≈ MW[i, j]
+    end
+
+    # trace
+    @test tr(W) ≈ tr(MW)
 end
 
 end # TestWoodburyIdentity
