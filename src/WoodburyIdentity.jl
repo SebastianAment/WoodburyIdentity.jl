@@ -9,7 +9,6 @@ using LinearAlgebraExtensions
 using LinearAlgebraExtensions: AbstractMatOrFac
 
 # TODO: pre-allocate intermediate storage
-
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
 struct Woodbury{T, AT, UT, CT, VT} <: Factorization{T}
@@ -17,7 +16,7 @@ struct Woodbury{T, AT, UT, CT, VT} <: Factorization{T}
     U::UT
     C::CT
     V::VT
-	α::T
+	α::T # should this be a binary type signaling +/-? Union{Val{-}, Val{+}}
 	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
 						C::AbstractMatOrFac, V::AbstractMatOrFac, α::Number = 1)
 		checkdims(A, U, C, V)
@@ -49,13 +48,6 @@ function woodbury(A, U, C, V, α::Real = 1, c::Real = 1)
     # size(W.U, 1) > c * size(W.U, 2) ? W : Matrix(W) # only return Woodbury if it is efficient
 end
 
-# function Woodbury(A::Union{AbstractMatrix, Factorization}, U::AbstractMatrix,
-# 				C::Union{AbstractMatrix, Factorization},
-# 				V::AbstractMatrix)#, α = 1)
-# 				println("hi")
-# 	Woodbury{T, typeof(A), typeof(U), typeof(C), typeof(V)}(A, U, C, V, convert(T, 1))
-# end
-
 # remnants
 # Cp = inv(Matrix(inv(C) .+ V*(A\U)))
 # temporary space for allocation-free solver
@@ -85,7 +77,7 @@ function Base.deepcopy(W::Woodbury)
 end
 
 import LinearAlgebra: factorize, dot, *, \, /
-# TODO: take care of temporaries
+# TODO: take care of temporaries!
 *(W::Woodbury, B::AbstractVecOrMat) = W.A*B + W.α*W.U*(W.C*(W.V*B))
 *(B::AbstractMatrix, W::Woodbury) = (W'*B')'
 
@@ -100,16 +92,25 @@ end
 \(W::Woodbury, B::AbstractVecOrMat) = inverse(W)*B
 /(B::AbstractMatrix, W::Woodbury) = B*inverse(W)
 
-# TODO: check this and make it efficient
+# TODO: make this efficient
 # if W.A = W.C = I, this is Sylvesters determinant theorem
+# Determinant theorem for A + α*(UCV)
 function LinearAlgebra.det(W::Woodbury)
-	det(W.A) * det(W.C) * det(inv(W.C) + *(W.V, inverse(W.A), W.U))
+	n, m = checksquare.((W, W.C))
+	det(W.A) * det(W.C) * W.α^m * det(inverse(W.C)/W.α + *(W.V, inverse(W.A), W.U))
 end
 
 function LinearAlgebra.logdet(W::Woodbury)
-	logdet(W.A) + logdet(W.C) + logdet(inv(W.C) + *(W.V, inverse(W.A), W.U))
+	l, s = logabsdet(W)
+	s > 0 ? l : error("Matrix is not positive definite")
 end
-# not a good way to compute logabsdet, except for log(abs(det(W))) (?)
+function LinearAlgebra.logabsdet(W::Woodbury)
+	n, m = checksquare.((W, W.C))
+	la, sa = logabsdet(W.A)
+	lc, sc = logabsdet(W.C)
+	ld, sd = logabsdet(inverse(W.C)/W.α + *(W.V, inverse(W.A), W.U))
+	return +(la, lc, ld, m*log(abs(W.α))), *(sa, sc, sd, sign(W.α))
+end
 
 # TODO: implement this in WoodburyMatrices and PR
 # figure out constant c for which woodbury is most efficient
