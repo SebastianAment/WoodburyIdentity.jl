@@ -12,28 +12,26 @@ using LinearAlgebraExtensions: LowRank
 # TODO: pre-allocate intermediate storage
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
-struct Woodbury{T, AT, UT, CT, VT} <: Factorization{T}
+struct Woodbury{T, AT, UT, CT, VT, F} <: Factorization{T}
     A::AT
     U::UT
     C::CT
     V::VT
-	α::T # should this be a binary type signaling +/-? Union{Val{-}, Val{+}}
+	α::F # this should either be + or -
 	# tn1::V # temporary arrays
 	# tn2::V
 	# tm1::V
 	# tm2::V
-	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
-						C::AbstractMatOrFac, V::AbstractMatOrFac, α::Number = 1)
+	function Woodbury(A::AT, U::UT, C::CT, V::VT, α::F = +) where {AT<:AbstractMatOrFac,
+								UT, CT, VT, F<:Union{typeof(+), typeof(-)}}
 		checkdims(A, U, C, V)
 		# check promote_type
 		T = promote_type(eltype.((A, U, C, V))...)
-		α = convert(T, α)
-
 		# tn1 = zeros(size(A, 1))
 		# tn2 = zeros(size(A, 2))
 		# tm1 = zeros(size(C, 1))
 		# tm2 = zeros(size(C, 2))
-		new{T, typeof(A), typeof(U), typeof(C), typeof(V)}(A, U, C, V, α)
+		new{T, AT, UT, CT, VT, F}(A, U, C, V, α)
 															# tn1, tn2, tm1, tm2)
 	end
 end
@@ -49,18 +47,19 @@ function checkdims(A, U, C, V)
 end
 
 # pseudo-constructor?
-function Woodbury(A::AbstractMatOrFac, L::LowRank, α::Real = 1)
+function Woodbury(A::AbstractMatOrFac, L::LowRank, α = +)
     Woodbury(A, L.U, 1.0*I(rank(L)), L.V, α)
 end
-woodbury(A, L::LowRank, α::Real = 1) = Woodbury(A, L, α)
-function woodbury(A, U, C, V, α::Real = 1, c::Real = 1)
+woodbury(A, L::LowRank, α = +) = Woodbury(A, L, α)
+function woodbury(A, U, C, V, α = +, c::Real = 1)
     W = Woodbury(A, U, C, V, α)
     # size(W.U, 1) > c * size(W.U, 2) ? W : Matrix(W) # only return Woodbury if it is efficient
 end
+switch_α(α::Union{typeof(+), typeof(-)}) = (α == +) ? (-) : (+)
 
 # TODO: make it work if U, V are vectors
 # original : Vector , Matrix
-# function Woodbury(A, U::Vector, C, V::Adjoint{<:Number, Vector}, α = 1)
+# function Woodbury(A, U::Vector, C, V::Adjoint{<:Number, Vector}, α = +)
 # 	Woodbury(A, reshape(U, , C, V, α)
 # end
 # Woodbury(A, U::AbstractVector, C, V::Adjoint) = Woodbury(A, U, C, Matrix(V))
@@ -68,7 +67,9 @@ end
 Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
 Base.eltype(W::Woodbury{T}) where {T} = T
-Base.Matrix(W::Woodbury) = W.A + W.α * *(W.U, W.C, W.V)
+function Base.Matrix(W::Woodbury)
+	W.α(Matrix(W.A), *(W.U, Matrix(W.C), W.V))
+end
 
 function Base.deepcopy(W::Woodbury)
 	U = deepcopy(W.U)
@@ -80,7 +81,7 @@ import LinearAlgebra: issymmetric, ishermitian
 issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
 ishermitian(W::Woodbury) = (W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
 function LinearAlgebra.adjoint(W::Woodbury)
-	ishermitian(W) ? W : Woodbury(W.A', W.V', W.C', W.U', conj(W.α))
+	ishermitian(W) ? W : Woodbury(W.A', W.V', W.C', W.U', W.α)
 end
 function LinearAlgebra.transpose(W::Woodbury)
 	issymmetric(W) ? W : Woodbury(transpose.((W.A, W.V, W.C, W.U))..., W.α)
@@ -112,7 +113,7 @@ import LinearAlgebra: dot, *, \, /
 function *(W::Woodbury, x::AbstractVecOrMat)
 	# mul!(W.tm2, W.V, x)
 	# mul!(W.tm1, W.C)
-	W.A*x + W.α*W.U*(W.C*(W.V*x))
+	W.α(W.A*x, W.U*(W.C*(W.V*x)))
 end
 *(B::AbstractMatrix, W::Woodbury) = (W'*B')'
 
@@ -120,43 +121,41 @@ end
 function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVecOrMat)
     Ux = W.U'x     # memory allocation can be avoided with lazy arrays
     Vy = (x ≡ y && W.U ≡ W.V') ? Ux : W.V*y
-    dot(x, W.A, y) + W.α * dot(Ux, W.C, Vy)
+    W.α(dot(x, W.A, y), dot(Ux, W.C, Vy))
 end
 
 # ternary mul
 function *(x::AbstractMatrix, W::Woodbury, y::AbstractVecOrMat)
     xU = x*W.U
     Vy = (x ≡ y' && W.U ≡ W.V') ? xU' : W.V*y
-    *(x, W.A, y) + W.α * *(xU, W.C, Vy) # can avoid two temporaries
+    W.α(*(x, W.A, y), *(xU, W.C, Vy)) # can avoid two temporaries
 end
 
-\(W::Woodbury, B::AbstractVecOrMat) = inverse(W)*B
-/(B::AbstractMatrix, W::Woodbury) = B*inverse(W)
+\(W::Woodbury, B::AbstractVecOrMat) = factorize(W)\B
+/(B::AbstractMatrix, W::Woodbury) = B/factorize(W)
 
 ########################## Matrix inversion lemma ##############################
-# TODO: implement this in WoodburyMatrices and PR
 # TODO: replace inverse with factorize, and let inverse call Inverse
 # figure out constant c for which woodbury is most efficient
-function inverse(W::Woodbury, c::Real = 1)
-	if size(W.U, 1) > c*size(W.U, 2) # and how easy is it to invert W.A, and W.C
-		invA = inv(W.A)
-		AU = invA * W.U
-		VA = (W.U ≡ W.V' && ishermitian(invA)) ? AU' : W.V * invA
-        C = inverse(inv(W.C) + W.V * AU) # could be made more efficient with 5 arg mul
-		Woodbury(invA, AU, C, VA, -W.α)
-    else
-        Inverse(W)
-    end
-end
-
+# could implement this in WoodburyMatrices and PR
 function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
     if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identiy when it is beneficial to do so
-		W = inverse(W) # triggers woodbury identiy
-        W = Woodbury(factorize(W.A), W.U, factorize(W.C), W.V, W.α)
-		Inverse(W) # wraps in Lazy inverse
+		A = inverse(factorize(W.A))
+		AU = A * W.U
+		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
+		C = factorized_C(W, W.V*AU)
+        Inverse(Woodbury(A, AU, C, VA, switch_α(W.α)))
     else
         factorize(Matrix(W))
     end
+end
+
+function factorized_C(W::Woodbury, VAU)
+	invC = inv(W.C) + VAU # inv(C) because we need the dense inverse matrix
+	if ishermitian(W)
+		return try inverse(cholesky(Hermitian(invC))) catch end
+	end
+	return inverse(factorize(invC)) # could be made more efficient with 5 arg mul?
 end
 
 ######################## Matrix determinant lemma ##############################
@@ -165,7 +164,9 @@ end
 # Determinant lemma for A + α*(UCV)
 function LinearAlgebra.det(W::Woodbury)
 	n, m = checksquare.((W, W.C))
-	det(W.A) * det(W.C) * W.α^m * det(inverse(W.C)/W.α + *(W.V, inverse(W.A), W.U))
+	α = (W.α == +) ? 1. : -1.
+	invC = W.α(*(W.V, inverse(W.A), W.U), inverse(W.C))
+	det(W.A) * det(W.C) * α^m * det(invC)
 end
 
 function LinearAlgebra.logdet(W::Woodbury)
@@ -176,8 +177,10 @@ function LinearAlgebra.logabsdet(W::Woodbury)
 	n, m = checksquare.((W, W.C))
 	la, sa = logabsdet(W.A)
 	lc, sc = logabsdet(W.C)
-	ld, sd = logabsdet(inverse(W.C)/W.α + *(W.V, inverse(W.A), W.U))
-	return +(la, lc, ld, m*log(abs(W.α))), *(sa, sc, sd, sign(W.α))
+	α = (W.α == +) ? 1. : -1.
+	invC = W.α(*(W.V, inverse(W.A), W.U), inverse(W.C))
+	ld, sd = logabsdet(invC)
+	return +(la, lc, ld, m*log(abs(α))), *(sa, sc, sd, sign(α))
 end
 
 end # WoodburyIdentity
