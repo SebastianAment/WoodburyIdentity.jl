@@ -68,7 +68,8 @@ Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
 Base.eltype(W::Woodbury{T}) where {T} = T
 function Base.Matrix(W::Woodbury)
-	W.α(Matrix(W.A), *(W.U, Matrix(W.C), W.V))
+	M = *(W.U, Matrix(W.C), W.V)
+	@. M = W.α($Matrix(W.A), M)
 end
 
 function Base.deepcopy(W::Woodbury)
@@ -108,18 +109,25 @@ function LinearAlgebra.tr(W::Woodbury)
 end
 
 ######################## Linear Algebra primitives #############################
-import LinearAlgebra: dot, *, \, /
+import LinearAlgebra: dot, *, \, /, mul!
 # TODO: take care of temporaries!
 function *(W::Woodbury, x::AbstractVecOrMat)
 	# mul!(W.tm2, W.V, x)
 	# mul!(W.tm1, W.C)
-	W.α(W.A*x, W.U*(W.C*(W.V*x)))
+	Ax = W.A*x
+	y = W.U*(W.C*(W.V*x))
+	@. y = W.α(Ax, y)
 end
 *(B::AbstractMatrix, W::Woodbury) = (W'*B')'
 
+# need to temporary arrays for multiplication
+# function mul!(t1::T, t2::T, W::Woodbury, x::T) where {T<:AbstractVecOrMat}
+# 	return 0
+# end
+
 # ternary dot
-function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVecOrMat)
-    Ux = W.U'x     # memory allocation can be avoided with lazy arrays
+function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVector)
+    Ux = W.U'x     # memory allocation can be avoided (with lazy arrays?)
     Vy = (x ≡ y && W.U ≡ W.V') ? Ux : W.V*y
     W.α(dot(x, W.A, y), dot(Ux, W.C, Vy))
 end
@@ -143,44 +151,65 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
 		A = inverse(factorize(W.A))
 		AU = A * W.U
 		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
-		C = factorized_C(W, W.V*AU)
-        Inverse(Woodbury(A, AU, C, VA, switch_α(W.α)))
+		D = factorize_D(W, W.V*AU)
+        Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α)))
     else
         factorize(Matrix(W))
     end
 end
 
-function factorized_C(W::Woodbury, VAU)
-	invC = inv(W.C) + VAU # inv(C) because we need the dense inverse matrix
+##################### conveniences for D = C⁻¹ ± V*A⁻¹*U ########################
+compute_D(W::Woodbury) = compute_D!(W, *(W.V, inverse(W.A), W.U))
+function compute_D!(W::Woodbury, VAU)
+	invC = AbstractMatrix(inverse(W.C)) # because we need the dense inverse matrix
+	@. VAU = W.α(VAU, invC) # could be made more efficient with 5 arg mul
+	return VAU
+end
+factorize_D(W::Woodbury) = factorize_D(W, *(W.V, inverse(W.A), W.U))
+function factorize_D(W::Woodbury, VAU)
+	D = compute_D!(W, VAU)
 	if ishermitian(W)
-		return try inverse(cholesky(Hermitian(invC))) catch end
+		return try cholesky(Hermitian(D)) catch end
 	end
-	return inverse(factorize(invC)) # could be made more efficient with 5 arg mul?
+	return factorize(D)
 end
 
 ######################## Matrix determinant lemma ##############################
 # TODO: make this efficient
+import LinearAlgebra: det, logdet, logabsdet
+
 # if W.A = W.C = I, this is Sylvesters determinant theorem
 # Determinant lemma for A + α*(UCV)
-function LinearAlgebra.det(W::Woodbury)
-	n, m = checksquare.((W, W.C))
-	α = (W.α == +) ? 1. : -1.
-	invC = W.α(*(W.V, inverse(W.A), W.U), inverse(W.C))
-	det(W.A) * det(W.C) * α^m * det(invC)
+function det(W::Woodbury, D = compute_D(W))
+	l, s = logabsdet(W, D)
+	return s * exp(l)
 end
 
-function LinearAlgebra.logdet(W::Woodbury)
-	l, s = logabsdet(W)
+function logdet(W::Woodbury, D = compute_D(W))
+	l, s = logabsdet(W, D)
 	s > 0 ? l : error("Matrix is not positive definite")
 end
-function LinearAlgebra.logabsdet(W::Woodbury)
-	n, m = checksquare.((W, W.C))
+
+function logabsdet(W::Woodbury, D = compute_D(W))
+	n, m = checksquare.((W, D))
 	la, sa = logabsdet(W.A)
 	lc, sc = logabsdet(W.C)
-	α = (W.α == +) ? 1. : -1.
-	invC = W.α(*(W.V, inverse(W.A), W.U), inverse(W.C))
-	ld, sd = logabsdet(invC)
-	return +(la, lc, ld, m*log(abs(α))), *(sa, sc, sd, sign(α))
+	ld, sd = logabsdet(D)
+	sα = (W.α == -) && isodd(m) ? -1. : 1.
+	return +(la, lc, ld), *(sa, sc, sd, sα)
+end
+
+# factorizes W and calculates its logdet, D is calculated and factorized only once
+function factorize_logdet(W::Woodbury, c::Real = 1)
+	if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identiy when it is beneficial to do so
+		A = inverse(factorize(W.A))
+		AU = A * W.U
+		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
+		D = factorize_D(W, W.V*AU)
+		Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α))), logdet(W, D)
+	else
+		factorize(Matrix(W))
+	end
 end
 
 end # WoodburyIdentity

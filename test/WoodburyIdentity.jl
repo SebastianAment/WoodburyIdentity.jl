@@ -1,6 +1,6 @@
 module TestWoodburyIdentity
 using WoodburyIdentity
-using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
+using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian, factorize_logdet
 using LazyInverse: inverse, Inverse
 using LinearAlgebra
 using Test
@@ -44,6 +44,7 @@ end
     F = factorize(W)
     x = randn(n)
     @test W \ x ≈ F \ x
+    @test MW \ x ≈ F \ x
 
     n = 4
     m = 3
@@ -67,6 +68,16 @@ end
 
     # trace
     @test tr(W) ≈ tr(MW)
+
+    # factorize
+    F = factorize(W)
+    @test Matrix(inverse(F)) ≈ inv(MW)
+
+    # factorizing and logdet
+    F, l = factorize_logdet(W)
+    @test l ≈ logdet(MW)
+    @test l ≈ logdet(F)
+    @test Matrix(inverse(F)) ≈ inv(MW)
 end
 
 end # TestWoodburyIdentity
