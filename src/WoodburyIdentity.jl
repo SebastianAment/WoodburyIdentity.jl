@@ -22,8 +22,8 @@ struct Woodbury{T, AT, UT, CT, VT, F} <: Factorization{T}
 	# tn2::V
 	# tm1::V
 	# tm2::V
-	function Woodbury(A::AT, U::UT, C::CT, V::VT, α::F = +) where {AT<:AbstractMatOrFac,
-								UT, CT, VT, F<:Union{typeof(+), typeof(-)}}
+	function Woodbury(A::AbstractMatOrFac, U, C, V, α::F = +) where {
+					F<:Union{typeof(+), typeof(-)}}
 		checkdims(A, U, C, V)
 		# check promote_type
 		T = promote_type(eltype.((A, U, C, V))...)
@@ -31,8 +31,8 @@ struct Woodbury{T, AT, UT, CT, VT, F} <: Factorization{T}
 		# tn2 = zeros(size(A, 2))
 		# tm1 = zeros(size(C, 1))
 		# tm2 = zeros(size(C, 2))
-		new{T, AT, UT, CT, VT, F}(A, U, C, V, α)
-															# tn1, tn2, tm1, tm2)
+		AT, UT, CT, VT = typeof.((A, U, C, V))
+		new{T, AT, UT, CT, VT, F}(A, U, C, V, α) # tn1, tn2, tm1, tm2)
 	end
 end
 
@@ -67,10 +67,11 @@ switch_α(α::Union{typeof(+), typeof(-)}) = (α == +) ? (-) : (+)
 Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
 Base.eltype(W::Woodbury{T}) where {T} = T
-function Base.Matrix(W::Woodbury)
+function Base.AbstractMatrix(W::Woodbury)
 	M = *(W.U, Matrix(W.C), W.V)
 	@. M = W.α($Matrix(W.A), M)
 end
+Base.Matrix(W::Woodbury) = AbstractMatrix(W)
 
 function Base.deepcopy(W::Woodbury)
 	U = deepcopy(W.U)
@@ -81,6 +82,7 @@ end
 import LinearAlgebra: issymmetric, ishermitian
 issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
 ishermitian(W::Woodbury) = (W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
+
 function LinearAlgebra.adjoint(W::Woodbury)
 	ishermitian(W) ? W : Woodbury(W.A', W.V', W.C', W.U', W.α)
 end
@@ -93,9 +95,9 @@ function Base.getindex(W::Woodbury, i::UnitRange, j::UnitRange)
 	A = view(W.A, i, j)
 	U = view(W.U, i, :)
 	if ishermitian(W)
-		Woodbury(A, U, W.C, U')
+		Woodbury(A, U, W.C, U', W.α)
 	else
-		Woodbury(A, U, W.C, view(W.V, :, j))
+		Woodbury(A, U, W.C, view(W.V, :, j), W.α)
 	end
 end
 function Base.getindex(W::Woodbury, i::Int, j::Int)
@@ -143,7 +145,6 @@ end
 /(B::AbstractMatrix, W::Woodbury) = B/factorize(W)
 
 ########################## Matrix inversion lemma ##############################
-# TODO: replace inverse with factorize, and let inverse call Inverse
 # figure out constant c for which woodbury is most efficient
 # could implement this in WoodburyMatrices and PR
 function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
@@ -175,9 +176,7 @@ function factorize_D(W::Woodbury, VAU)
 end
 
 ######################## Matrix determinant lemma ##############################
-# TODO: make this efficient
 import LinearAlgebra: det, logdet, logabsdet
-
 # if W.A = W.C = I, this is Sylvesters determinant theorem
 # Determinant lemma for A + α*(UCV)
 function det(W::Woodbury, D = compute_D(W))
@@ -191,26 +190,43 @@ function logdet(W::Woodbury, D = compute_D(W))
 end
 
 function logabsdet(W::Woodbury, D = compute_D(W))
-	n, m = checksquare.((W, D))
-	la, sa = logabsdet(W.A)
-	lc, sc = logabsdet(W.C)
+	_logabsdet(W.A, W.C, D, W.α)
+end
+
+@inline function _logabsdet(A, C, D, α::Union{typeof(+), typeof(-)})
+	n, m = checksquare.((A, D))
+	la, sa = logabsdet(A)
+	lc, sc = logabsdet(C)
 	ld, sd = logabsdet(D)
-	sα = (W.α == -) && isodd(m) ? -1. : 1.
+	sα = (α == -) && isodd(m) ? -1. : 1.
 	return +(la, lc, ld), *(sa, sc, sd, sα)
 end
 
+# with the inclusion of the D field, this became obsolete
 # factorizes W and calculates its logdet, D is calculated and factorized only once
+# for non-trivial inner dimension, this is 2x faster than calling both individually
+# call factorize_logdet recursively, in case there are mutliple levels of woodbury?
 function factorize_logdet(W::Woodbury, c::Real = 1)
 	if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identiy when it is beneficial to do so
 		A = inverse(factorize(W.A))
 		AU = A * W.U
 		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
 		D = factorize_D(W, W.V*AU)
-		Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α))), logdet(W, D)
+		Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α))), logdet(W, D) # logdet_W
 	else
 		factorize(Matrix(W))
 	end
 end
+
+# towards calling factorize_logdet recursively
+# AF, logdet_A = factorize_logdet(W.A) # more efficient if A is a Woodbury instance
+# logdet_W = _logabsdet(A, C, D)
+
+# fallback for regular matrices and factorizations
+# function factorize_logdet(W::AbstractMatOrFac, c::Real = 1)
+# 	F = factorize(W)
+# 	return F, logdet(F)
+# end
 
 end # WoodburyIdentity
 

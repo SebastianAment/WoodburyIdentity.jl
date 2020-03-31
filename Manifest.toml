@@ -23,9 +23,9 @@ version = "0.5.0"
 
 [[CompilerSupportLibraries_jll]]
 deps = ["Libdl", "Pkg"]
-git-tree-sha1 = "067567a322fe466c5ec8d01413eee7127bd11699"
+git-tree-sha1 = "7c4f882c41faa72118841185afc58a2eb00ef612"
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "0.3.1+0"
+version = "0.3.3+0"
 
 [[DSP]]
 deps = ["FFTW", "IterTools", "LinearAlgebra", "Polynomials", "Random", "Reexport", "SpecialFunctions", "Statistics"]
@@ -60,15 +60,15 @@ version = "1.2.0"
 
 [[FFTW_jll]]
 deps = ["Libdl", "Pkg"]
-git-tree-sha1 = "ddb57f4cf125243b4aa4908c94d73a805f3cbf2c"
+git-tree-sha1 = "6c975cd606128d45d1df432fb812d6eb10fee00b"
 uuid = "f5851436-0d7a-5f13-b9de-f02708fd171a"
-version = "3.3.9+4"
+version = "3.3.9+5"
 
 [[FillArrays]]
 deps = ["LinearAlgebra", "Random", "SparseArrays"]
-git-tree-sha1 = "85c6b57e2680fa28d5c8adc798967377646fbf66"
+git-tree-sha1 = "3eb5253af6186eada40de3df524a1c10f0c6bfa2"
 uuid = "1a297f60-69ca-5386-bcde-b61e274b549b"
-version = "0.8.5"
+version = "0.8.6"
 
 [[InfiniteArrays]]
 deps = ["DSP", "FillArrays", "LazyArrays", "LinearAlgebra", "SparseArrays", "Statistics"]
@@ -105,7 +105,7 @@ version = "0.15.1"
 
 [[LazyInverse]]
 deps = ["LinearAlgebra", "Test"]
-git-tree-sha1 = "1c706ff6507ab9e3d36d4c95ee08332d24f1e7be"
+git-tree-sha1 = "c35cb2974cfddd87ef494570c0936297524ec3eb"
 repo-rev = "master"
 repo-url = "git@github.com:SebastianAment/LazyInverse.jl.git"
 uuid = "d0afe1cb-6484-4949-b9e9-61bc645ed6c7"
@@ -124,9 +124,9 @@ uuid = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 
 [[LinearAlgebraExtensions]]
 deps = ["FFTW", "InfiniteArrays", "LazyArrays", "LazyInverse", "LinearAlgebra", "StatsBase", "Test"]
-git-tree-sha1 = "4a9bd5fff6d7f3ac560ee12469399e3e499d4c24"
+git-tree-sha1 = "55f63edda9d7052a3e3cc0bd4ca7bb320e86326b"
 repo-rev = "master"
-repo-url = "../LinearAlgebraExtensions"
+repo-url = "https://github.com/SebastianAment/LinearAlgebraExtensions.jl.git"
 uuid = "cb114d4a-f1bd-499c-ad9e-7f2ed74575b9"
 version = "0.1.0"
 

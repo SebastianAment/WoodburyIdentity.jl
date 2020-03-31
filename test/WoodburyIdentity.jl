@@ -42,6 +42,7 @@ end
     W = getW(n, m, symmetric = true)
     MW = Matrix(W)
     F = factorize(W)
+    @test F isa Inverse
     x = randn(n)
     @test W \ x ≈ F \ x
     @test MW \ x ≈ F \ x
@@ -72,6 +73,7 @@ end
     # factorize
     F = factorize(W)
     @test Matrix(inverse(F)) ≈ inv(MW)
+    @test logdet(F) ≈ logdet(MW)
 
     # factorizing and logdet
     F, l = factorize_logdet(W)
