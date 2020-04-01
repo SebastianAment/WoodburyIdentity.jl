@@ -9,21 +9,24 @@ using LinearAlgebraExtensions
 using LinearAlgebraExtensions: AbstractMatOrFac
 using LinearAlgebraExtensions: LowRank
 
+export Woodbury
+
 # TODO: pre-allocate intermediate storage
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
-struct Woodbury{T, AT, UT, CT, VT, F} <: Factorization{T}
+struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
     A::AT
     U::UT
     C::CT
     V::VT
 	α::F # this should either be + or -
+	logabsdet::L
 	# tn1::V # temporary arrays
 	# tn2::V
 	# tm1::V
 	# tm2::V
-	function Woodbury(A::AbstractMatOrFac, U, C, V, α::F = +) where {
-					F<:Union{typeof(+), typeof(-)}}
+	function Woodbury(A::AbstractMatOrFac, U, C, V, α::F = +,
+					logabsdet = nothing) where {F<:Union{typeof(+), typeof(-)}} # logabsdet::Union{NTuple{2, Real}, Nothing} = nothing
 		checkdims(A, U, C, V)
 		# check promote_type
 		T = promote_type(eltype.((A, U, C, V))...)
@@ -31,8 +34,8 @@ struct Woodbury{T, AT, UT, CT, VT, F} <: Factorization{T}
 		# tn2 = zeros(size(A, 2))
 		# tm1 = zeros(size(C, 1))
 		# tm2 = zeros(size(C, 2))
-		AT, UT, CT, VT = typeof.((A, U, C, V))
-		new{T, AT, UT, CT, VT, F}(A, U, C, V, α) # tn1, tn2, tm1, tm2)
+		AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
+		new{T, AT, UT, CT, VT, F, LT}(A, U, C, V, α, logabsdet) # tn1, tn2, tm1, tm2)
 	end
 end
 
@@ -76,18 +79,22 @@ Base.Matrix(W::Woodbury) = AbstractMatrix(W)
 function Base.deepcopy(W::Woodbury)
 	U = deepcopy(W.U)
 	V = U ≡ V' ? U' : deepcopy(V)
-	Woodbury(deepcopy(W.A), U, deepcopy(W.C), V, W.α)
+	Woodbury(deepcopy(W.A), U, deepcopy(W.C), V, W.α, W.logabsdet)
 end
 
-import LinearAlgebra: issymmetric, ishermitian
+import LinearAlgebra: issymmetric, ishermitian, isposdef, adjoint, transpose
+function ishermitian(W::Woodbury)
+	(W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
+end
 issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
-ishermitian(W::Woodbury) = (W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
-
-function LinearAlgebra.adjoint(W::Woodbury)
-	ishermitian(W) ? W : Woodbury(W.A', W.V', W.C', W.U', W.α)
+function isposdef(W::Woodbury)
+	W.logabsdet isa Nothing ? isposdef(factorize(W)) : (W.logabsdet[2] > 0)
 end
-function LinearAlgebra.transpose(W::Woodbury)
-	issymmetric(W) ? W : Woodbury(transpose.((W.A, W.V, W.C, W.U))..., W.α)
+function adjoint(W::Woodbury)
+	ishermitian(W) ? W : Woodbury(W.A', W.V', W.C', W.U', W.α, W.logabsdet)
+end
+function transpose(W::Woodbury)
+	issymmetric(W) ? W : Woodbury(transpose.((W.A, W.V, W.C, W.U))..., W.α, W.logabsdet)
 end
 
 # WARNING: creates views of previous object, so mutating it changes the original object
@@ -95,9 +102,9 @@ function Base.getindex(W::Woodbury, i::UnitRange, j::UnitRange)
 	A = view(W.A, i, j)
 	U = view(W.U, i, :)
 	if ishermitian(W)
-		Woodbury(A, U, W.C, U', W.α)
+		Woodbury(A, U, W.C, U', W.α, W.logabsdet)
 	else
-		Woodbury(A, U, W.C, view(W.V, :, j), W.α)
+		Woodbury(A, U, W.C, view(W.V, :, j), W.α, W.logabsdet)
 	end
 end
 function Base.getindex(W::Woodbury, i::Int, j::Int)
@@ -147,16 +154,23 @@ end
 ########################## Matrix inversion lemma ##############################
 # figure out constant c for which woodbury is most efficient
 # could implement this in WoodburyMatrices and PR
-function LinearAlgebra.factorize(W::Woodbury, c::Real = 1)
-    if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identiy when it is beneficial to do so
-		A = inverse(factorize(W.A))
-		AU = A * W.U
-		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
-		D = factorize_D(W, W.V*AU)
-        Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α)))
-    else
-        factorize(Matrix(W))
-    end
+function LinearAlgebra.factorize(W::Woodbury, c::Real = 1, compute_logdet::Val{T} = Val(true)) where T
+    if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identity when it is beneficial to do so
+		A = factorize(W.A)
+		A⁻¹ = inverse(A)
+		A⁻¹U = A⁻¹ * W.U
+		VA⁻¹ = (W.U ≡ W.V' && ishermitian(A⁻¹)) ? A⁻¹U' : W.V * A⁻¹
+		D = factorize_D(W, W.V*A⁻¹U)
+		if T
+			l, s = _logabsdet(A, W.C, D, W.α)
+			W_logabsdet = (-l, s) # since we are taking the inverse
+		else
+			W_logabsdet = nothing
+		end
+		Inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, switch_α(W.α), W_logabsdet))
+	else
+		factorize(Matrix(W))
+	end
 end
 
 ##################### conveniences for D = C⁻¹ ± V*A⁻¹*U ########################
@@ -170,7 +184,7 @@ factorize_D(W::Woodbury) = factorize_D(W, *(W.V, inverse(W.A), W.U))
 function factorize_D(W::Woodbury, VAU)
 	D = compute_D!(W, VAU)
 	if ishermitian(W)
-		return try cholesky(Hermitian(D)) catch end
+		try return cholesky(Hermitian(D)) catch end
 	end
 	return factorize(D)
 end
@@ -179,20 +193,14 @@ end
 import LinearAlgebra: det, logdet, logabsdet
 # if W.A = W.C = I, this is Sylvesters determinant theorem
 # Determinant lemma for A + α*(UCV)
-function det(W::Woodbury, D = compute_D(W))
-	l, s = logabsdet(W, D)
-	return s * exp(l)
+function det(W::Woodbury)
+	l, s = logabsdet(W)
+	exp(l) * s
 end
-
-function logdet(W::Woodbury, D = compute_D(W))
-	l, s = logabsdet(W, D)
-	s > 0 ? l : error("Matrix is not positive definite")
+function logabsdet(W::Woodbury)
+	W.logabsdet == nothing ? logabsdet(factorize(W)) : W.logabsdet
 end
-
-function logabsdet(W::Woodbury, D = compute_D(W))
-	_logabsdet(W.A, W.C, D, W.α)
-end
-
+# TODO: check this
 @inline function _logabsdet(A, C, D, α::Union{typeof(+), typeof(-)})
 	n, m = checksquare.((A, D))
 	la, sa = logabsdet(A)
@@ -201,32 +209,6 @@ end
 	sα = (α == -) && isodd(m) ? -1. : 1.
 	return +(la, lc, ld), *(sa, sc, sd, sα)
 end
-
-# with the inclusion of the D field, this became obsolete
-# factorizes W and calculates its logdet, D is calculated and factorized only once
-# for non-trivial inner dimension, this is 2x faster than calling both individually
-# call factorize_logdet recursively, in case there are mutliple levels of woodbury?
-function factorize_logdet(W::Woodbury, c::Real = 1)
-	if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identiy when it is beneficial to do so
-		A = inverse(factorize(W.A))
-		AU = A * W.U
-		VA = (W.U ≡ W.V' && ishermitian(A)) ? AU' : W.V * A
-		D = factorize_D(W, W.V*AU)
-		Inverse(Woodbury(A, AU, inverse(D), VA, switch_α(W.α))), logdet(W, D) # logdet_W
-	else
-		factorize(Matrix(W))
-	end
-end
-
-# towards calling factorize_logdet recursively
-# AF, logdet_A = factorize_logdet(W.A) # more efficient if A is a Woodbury instance
-# logdet_W = _logabsdet(A, C, D)
-
-# fallback for regular matrices and factorizations
-# function factorize_logdet(W::AbstractMatOrFac, c::Real = 1)
-# 	F = factorize(W)
-# 	return F, logdet(F)
-# end
 
 end # WoodburyIdentity
 

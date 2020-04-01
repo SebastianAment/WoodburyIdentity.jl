@@ -4,7 +4,33 @@ using BenchmarkTools
 using WoodburyIdentity
 using WoodburyIdentity: Woodbury
 
+# TODO: benchmark factorize against factorize without logdet computation
 # TODO: figure out parameter c in WoodburyIdentity, which
+# TODO: benchmark pre-allocated solve
+
+function judge_allocated_multiply(n = 64, m = 3)
+    suite = BenchmarkGroup()
+    U = randn(n, m)
+    W = Woodbury(I(n), U, I(m), U')
+    # factorization
+    x = randn(n)
+    F = factorize(W)
+    # suite["solve"] = @benchmarkable $F \ $x
+    suite["multiply"] = @benchmarkable $W * $x
+
+    # suite["ternary dot"] = @benchmarkable dot($x, $W, $x)
+    return suite
+end
+
+function Base.:*(W::Woodbury, x::AbstractVecOrMat, t::NTuple{4, AbstractVector})
+	# mul!(W.tm2, W.V, x)
+	# mul!(W.tm1, W.C)
+	Ax = W.A*x
+	y = W.U*(W.C*(W.V*x))
+	@. y = W.α(Ax, y)
+end
+*(B:
+
 # controls when the Woodbury representation is more efficient than dense
 function woodbury(n = 64, m = 3)
     suite = BenchmarkGroup()
@@ -19,16 +45,6 @@ function woodbury(n = 64, m = 3)
     suite["ternary dot"] = @benchmarkable dot($x, $W, $x)
     suite["logdet"] = @benchmarkable logdet($W)
     return suite
-end
-
-function judge_factorize_logdet(n = 64, m = 3)
-    U = randn(n, m)
-    W = Woodbury(I(n), U, I(m), U')
-    MW = Matrix(W)
-    pooled = @benchmark WoodburyIdentity.factorize_logdet($W)
-    separated = @benchmark begin factorize($W); logdet($W) end
-    f = minimum
-    judge(f(pooled), f(separated))
 end
 
 ########  to compare
@@ -57,3 +73,16 @@ function wood_vs_dense(n = 64, m = 3)
 end
 
 end # WoodburyBenchmarks
+
+# factorize_logdet was deprecated
+# function judge_factorize_logdet(n = 64, m = 3)
+#     U = randn(n, m)
+#     W = Woodbury(I(n), U, I(m), U')
+#     MW = Matrix(W)
+#     pooled = @benchmark WoodburyIdentity.factorize_logdet($W)
+#     separated = @benchmark begin F = factorize($W); logdet(F) end
+#     # F = factorize(W)
+#     # ld = @benchmark logdet($F)
+#     f = minimum
+#     judge(f(pooled), f(separated))
+# end

@@ -1,6 +1,6 @@
 module TestWoodburyIdentity
 using WoodburyIdentity
-using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian, factorize_logdet
+using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
 using LazyInverse: inverse, Inverse
 using LinearAlgebra
 using Test
@@ -55,6 +55,8 @@ end
     ## determinant
     @test det(W) ≈ det(MW)
     @test logdet(W) ≈ logdet(MW)
+    @test logabsdet(W)[1] ≈ logabsdet(MW)[1]
+    @test logabsdet(W)[2] ≈ logabsdet(MW)[2]
     @test det(inverse(W)) ≈ det(Inverse(W))
     @test det(inverse(W)) ≈ det(inv(MW))
     @test logdet(inverse(W)) ≈ logdet(Inverse(W))
@@ -74,12 +76,22 @@ end
     F = factorize(W)
     @test Matrix(inverse(F)) ≈ inv(MW)
     @test logdet(F) ≈ logdet(MW)
+    @test isposdef(F)
 
-    # factorizing and logdet
-    F, l = factorize_logdet(W)
-    @test l ≈ logdet(MW)
-    @test l ≈ logdet(F)
+    # factorize and logdet after factorization
+    F = factorize(W)
+    @test logabsdet(F)[1] ≈ logabsdet(MW)[1]
+    @test logabsdet(F)[2] ≈ logabsdet(MW)[2]
+    @test logdet(F) ≈ logdet(MW)
     @test Matrix(inverse(F)) ≈ inv(MW)
+
+    # Test recursive stacking of woodbury objects
+    b = randn(n, 1)
+    W2 = Woodbury(W, b, ones(1,1), b')
+    F2 = factorize(W2)
+    M2 = Matrix(W2)
+    @test logdet(W2) ≈ logdet(M2)
+    @test logdet(F2) ≈ logdet(M2)
 end
 
 end # TestWoodburyIdentity
