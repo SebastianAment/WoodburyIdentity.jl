@@ -102,9 +102,9 @@ function Base.getindex(W::Woodbury, i::UnitRange, j::UnitRange)
 	A = view(W.A, i, j)
 	U = view(W.U, i, :)
 	if ishermitian(W)
-		Woodbury(A, U, W.C, U', W.α, W.logabsdet)
+		Woodbury(A, U, W.C, U', W.α, nothing)
 	else
-		Woodbury(A, U, W.C, view(W.V, :, j), W.α, W.logabsdet)
+		Woodbury(A, U, W.C, view(W.V, :, j), W.α, nothing)
 	end
 end
 function Base.getindex(W::Woodbury, i::Int, j::Int)
@@ -154,7 +154,8 @@ end
 ########################## Matrix inversion lemma ##############################
 # figure out constant c for which woodbury is most efficient
 # could implement this in WoodburyMatrices and PR
-function LinearAlgebra.factorize(W::Woodbury, c::Real = 1, compute_logdet::Val{T} = Val(true)) where T
+function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
+									compute_logdet::Val{T} = Val(true)) where T
     if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identity when it is beneficial to do so
 		A = factorize(W.A)
 		A⁻¹ = inverse(A)
@@ -167,7 +168,7 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1, compute_logdet::Val{T
 		else
 			W_logabsdet = nothing
 		end
-		Inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, switch_α(W.α), W_logabsdet))
+		inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, switch_α(W.α), W_logabsdet))
 	else
 		factorize(Matrix(W))
 	end

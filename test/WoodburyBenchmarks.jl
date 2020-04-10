@@ -29,7 +29,6 @@ function Base.:*(W::Woodbury, x::AbstractVecOrMat, t::NTuple{4, AbstractVector})
 	y = W.U*(W.C*(W.V*x))
 	@. y = W.α(Ax, y)
 end
-*(B:
 
 # controls when the Woodbury representation is more efficient than dense
 function woodbury(n = 64, m = 3)
@@ -73,16 +72,3 @@ function wood_vs_dense(n = 64, m = 3)
 end
 
 end # WoodburyBenchmarks
-
-# factorize_logdet was deprecated
-# function judge_factorize_logdet(n = 64, m = 3)
-#     U = randn(n, m)
-#     W = Woodbury(I(n), U, I(m), U')
-#     MW = Matrix(W)
-#     pooled = @benchmark WoodburyIdentity.factorize_logdet($W)
-#     separated = @benchmark begin F = factorize($W); logdet(F) end
-#     # F = factorize(W)
-#     # ld = @benchmark logdet($F)
-#     f = minimum
-#     judge(f(pooled), f(separated))
-# end
