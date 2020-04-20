@@ -15,7 +15,7 @@ function getW(n, m; diagonal = true, symmetric = false)
     W = Woodbury(A, U, C, V)
 end
 
-@testset "woodbury" begin
+@testset "Woodbury" begin
     n = 3
     m = 2
     W = getW(n, m, symmetric = true)
@@ -85,13 +85,28 @@ end
     @test logdet(F) ≈ logdet(MW)
     @test Matrix(inverse(F)) ≈ inv(MW)
 
-    # Test recursive stacking of woodbury objects
+    # test recursive stacking of woodbury objects
     b = randn(n, 1)
-    W2 = Woodbury(W, b, ones(1,1), b')
+    W2 = Woodbury(W, b, ones(1, 1), b')
     F2 = factorize(W2)
     M2 = Matrix(W2)
     @test logdet(W2) ≈ logdet(M2)
     @test logdet(F2) ≈ logdet(M2)
+
+    # test factorize_D behavior on non-hermitian 1x1 matrix
+    using WoodburyIdentity: factorize_D
+    FD = factorize_D(W2, fill(-rand(), (1, 1)))
+    @test FD isa Matrix
+    @test size(FD) == (1, 1)
+
+    # test rank 1 constructor
+    A = exp(randn())*I(n)
+    u = randn(n)
+    W = Woodbury(A, u)
+    @test Matrix(W) ≈ A + u*u'
+    v = randn(n)
+    W = Woodbury(A, u, v')
+    @test Matrix(W) ≈ A + u*v'
 end
 
 end # TestWoodburyIdentity

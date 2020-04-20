@@ -12,6 +12,8 @@ using LinearAlgebraExtensions: LowRank
 export Woodbury
 
 # TODO: pre-allocate intermediate storage
+# Things that prevent C from being a scalar: checkdims, factorize, ...
+
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
 struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
@@ -25,8 +27,8 @@ struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
 	# tn2::V
 	# tm1::V
 	# tm2::V
-	function Woodbury(A::AbstractMatOrFac, U, C, V, α::F = +,
-					logabsdet = nothing) where {F<:Union{typeof(+), typeof(-)}} # logabsdet::Union{NTuple{2, Real}, Nothing} = nothing
+	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac, C, V::AbstractMatOrFac,
+		 α::F = +, logabsdet = nothing) where {F<:Union{typeof(+), typeof(-)}} # logabsdet::Union{NTuple{2, Real}, Nothing} = nothing
 		checkdims(A, U, C, V)
 		# check promote_type
 		T = promote_type(eltype.((A, U, C, V))...)
@@ -60,12 +62,11 @@ function woodbury(A, U, C, V, α = +, c::Real = 1)
 end
 switch_α(α::Union{typeof(+), typeof(-)}) = (α == +) ? (-) : (+)
 
-# TODO: make it work if U, V are vectors
-# original : Vector , Matrix
-# function Woodbury(A, U::Vector, C, V::Adjoint{<:Number, Vector}, α = +)
-# 	Woodbury(A, reshape(U, , C, V, α)
-# end
-# Woodbury(A, U::AbstractVector, C, V::Adjoint) = Woodbury(A, U, C, Matrix(V))
+# rank one correction
+Woodbury(A, u::AbstractVector, α = +) = Woodbury(A, u, u', α)
+function Woodbury(A, u::AbstractVector, v::Adjoint{<:Number, <:AbstractVector}, α = +)
+	Woodbury(A, reshape(u, :, 1), fill(1., (1, 1)), v, α)
+end
 ################################## Base ########################################
 Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
@@ -184,7 +185,9 @@ end
 factorize_D(W::Woodbury) = factorize_D(W, *(W.V, inverse(W.A), W.U))
 function factorize_D(W::Woodbury, VAU)
 	D = compute_D!(W, VAU)
-	if ishermitian(W)
+	if size(D) == (1, 1)
+		return D
+	elseif ishermitian(W)
 		try return cholesky(Hermitian(D)) catch end
 	end
 	return factorize(D)
@@ -203,7 +206,7 @@ function logabsdet(W::Woodbury)
 end
 # TODO: check this
 @inline function _logabsdet(A, C, D, α::Union{typeof(+), typeof(-)})
-	n, m = checksquare.((A, D))
+	n, m = checksquare(A), checksquare(D)
 	la, sa = logabsdet(A)
 	lc, sc = logabsdet(C)
 	ld, sd = logabsdet(D)
