@@ -6,8 +6,7 @@ using WoodburyIdentity: Woodbury
 
 # TODO: benchmark factorize against factorize without logdet computation
 # TODO: figure out parameter c in WoodburyIdentity, which
-# TODO: benchmark pre-allocated solve
-
+# TODO: benchmark pre-allocated solve, mul!
 function judge_allocated_multiply(n = 64, m = 3)
     suite = BenchmarkGroup()
     U = randn(n, m)
@@ -20,14 +19,6 @@ function judge_allocated_multiply(n = 64, m = 3)
 
     # suite["ternary dot"] = @benchmarkable dot($x, $W, $x)
     return suite
-end
-
-function Base.:*(W::Woodbury, x::AbstractVecOrMat, t::NTuple{4, AbstractVector})
-	# mul!(W.tm2, W.V, x)
-	# mul!(W.tm1, W.C)
-	Ax = W.A*x
-	y = W.U*(W.C*(W.V*x))
-	@. y = W.α(Ax, y)
 end
 
 # controls when the Woodbury representation is more efficient than dense

@@ -34,7 +34,7 @@ end
 
     # test solves
     @test W\(W*x) ≈ x
-    @test (x'W)/W ≈ x'
+    @test (x'*W)/W ≈ x'
 
     # factorization
     n = 1024

@@ -84,6 +84,7 @@ function Base.deepcopy(W::Woodbury)
 end
 
 import LinearAlgebra: issymmetric, ishermitian, isposdef, adjoint, transpose
+# WARNING: sufficient but not necessary condition
 function ishermitian(W::Woodbury)
 	(W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
 end
@@ -120,20 +121,26 @@ end
 
 ######################## Linear Algebra primitives #############################
 import LinearAlgebra: dot, *, \, /, mul!
-# TODO: take care of temporaries!
-function *(W::Woodbury, x::AbstractVecOrMat)
-	# mul!(W.tm2, W.V, x)
-	# mul!(W.tm1, W.C)
-	Ax = W.A*x
-	y = W.U*(W.C*(W.V*x))
-	@. y = W.α(Ax, y)
-end
+*(W::Woodbury, x::AbstractVecOrMat) = mul!(similar(x), W, x)
 *(B::AbstractMatrix, W::Woodbury) = (W'*B')'
+function LinearAlgebra.mul!(y::AbstractVector, W::Woodbury, x::AbstractVector)
+	t = similar(x, size(W.V, 1)) # temporary, add to struct?
+	mul!!(y, W, x, t)
+end
+function LinearAlgebra.mul!(y::AbstractMatrix, W::Woodbury, x::AbstractMatrix)
+	t = similar(x, size(W.V, 1), size(x, 2))
+	mul!!(y, W, x, t)
+end
 
-# need to temporary arrays for multiplication
-# function mul!(t1::T, t2::T, W::Woodbury, x::T) where {T<:AbstractVecOrMat}
-# 	return 0
-# end
+# stores result in y, uses temporary t
+function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, t::AbstractVecOrMat)
+	k = size(W.V, 1)
+	yk = y isa AbstractVector ? view(y, 1:k) : view(y, 1:k, :) # matrix memory alignment could be better
+	mul!(yk, W.V, x)
+	mul!(t, W.C, yk)
+	mul!(y, W.U, t)
+ 	mul!(y, W.A, x, 1, W.α(1))
+end
 
 # ternary dot
 function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVector)
