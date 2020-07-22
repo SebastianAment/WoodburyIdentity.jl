@@ -22,9 +22,14 @@ end
     MW = Matrix(W)
     @test size(W) == (n, n)
     x = randn(size(W, 2))
+    # multiplication
     @test W*x ≈ MW*x
     @test x'W ≈ x'MW
     @test dot(x, W, x) ≈ dot(x, MW*x)
+    X = randn(size(W, 2), 3)
+    @test W*X ≈ MW*X
+    @test X'*W ≈ X'*MW
+
     @test eltype(W) == Float64
     @test issymmetric(W)
     @test ishermitian(W)

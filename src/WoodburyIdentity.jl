@@ -11,9 +11,7 @@ using LinearAlgebraExtensions: LowRank
 
 export Woodbury
 
-# TODO: pre-allocate intermediate storage
-# Things that prevent C from being a scalar: checkdims, factorize, ...
-
+# things that prevent C from being a scalar: checkdims, factorize, ...
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
 struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
@@ -21,21 +19,13 @@ struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
     U::UT
     C::CT
     V::VT
-	α::F # this should either be + or -
+	α::F # this should either be + or -, generalize to scalar?
 	logabsdet::L
-	# tn1::V # temporary arrays
-	# tn2::V
-	# tm1::V
-	# tm2::V
 	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac, C, V::AbstractMatOrFac,
 		 α::F = +, logabsdet = nothing) where {F<:Union{typeof(+), typeof(-)}} # logabsdet::Union{NTuple{2, Real}, Nothing} = nothing
 		checkdims(A, U, C, V)
 		# check promote_type
 		T = promote_type(eltype.((A, U, C, V))...)
-		# tn1 = zeros(size(A, 1))
-		# tn2 = zeros(size(A, 2))
-		# tm1 = zeros(size(C, 1))
-		# tm2 = zeros(size(C, 2))
 		AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
 		new{T, AT, UT, CT, VT, F, LT}(A, U, C, V, α, logabsdet) # tn1, tn2, tm1, tm2)
 	end
@@ -48,13 +38,15 @@ function checkdims(A, U, C, V)
 	s = "is inconsistent with A ($(size(A))) and C ($(size(C)))"
 	size(U) ≠ (n, k) && throw(DimensionMismatch("Size of U ($(size(U)))"*s))
 	size(V) ≠ (k, n) && throw(DimensionMismatch("Size of V ($(size(V)))"*s))
-	return
+	return true
 end
 
 # pseudo-constructor?
 function Woodbury(A::AbstractMatOrFac, L::LowRank, α = +)
     Woodbury(A, L.U, 1.0*I(rank(L)), L.V, α)
 end
+Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = +) = Woodbury(A, LowRank(C), α)
+
 woodbury(A, L::LowRank, α = +) = Woodbury(A, L, α)
 function woodbury(A, U, C, V, α = +, c::Real = 1)
     W = Woodbury(A, U, C, V, α)
