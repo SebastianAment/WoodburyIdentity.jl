@@ -112,6 +112,14 @@ end
     v = randn(n)
     W = Woodbury(A, u, v')
     @test Matrix(W) ≈ A + u*v'
+
+    # constructor with cholesky pivoted
+    A = randn(1, n)
+    A = A'A
+    C = cholesky(A, Val(true), check = false)
+    W = Woodbury(A, C)
+    @test W isa Woodbury
+    @test Matrix(W) ≈ 2A
 end
 
 end # TestWoodburyIdentity

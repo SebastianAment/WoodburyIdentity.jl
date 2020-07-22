@@ -10,7 +10,6 @@ using LinearAlgebraExtensions: AbstractMatOrFac
 using LinearAlgebraExtensions: LowRank
 
 export Woodbury
-
 # things that prevent C from being a scalar: checkdims, factorize, ...
 # represents A + αUCV
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
