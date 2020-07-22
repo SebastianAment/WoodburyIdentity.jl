@@ -59,27 +59,36 @@ function Woodbury(A, u::AbstractVector, v::Adjoint{<:Number, <:AbstractVector}, 
 	Woodbury(A, reshape(u, :, 1), fill(1., (1, 1)), v, α)
 end
 ################################## Base ########################################
-Base.size(W::Woodbury) = size(W.A)
-Base.size(W::Woodbury, d) = size(W.A, d)
-Base.eltype(W::Woodbury{T}) where {T} = T
+import Base: size, eltype, copy, deepcopy
+size(W::Woodbury) = size(W.A)
+size(W::Woodbury, d) = size(W.A, d)
+eltype(W::Woodbury{T}) where {T} = T
 function Base.AbstractMatrix(W::Woodbury)
 	M = *(W.U, Matrix(W.C), W.V)
 	@. M = W.α($Matrix(W.A), M)
+	# ishermitian(W) ? Hermitian(M) : M
 end
 Base.Matrix(W::Woodbury) = AbstractMatrix(W)
-
-function Base.deepcopy(W::Woodbury)
+function deepcopy(W::Woodbury)
 	U = deepcopy(W.U)
 	V = U ≡ V' ? U' : deepcopy(V)
 	Woodbury(deepcopy(W.A), U, deepcopy(W.C), V, W.α, W.logabsdet)
 end
+copy(W::Woodbury) = deepcopy(W)
 
-import LinearAlgebra: issymmetric, ishermitian, isposdef, adjoint, transpose
-# WARNING: sufficient but not necessary condition
-function ishermitian(W::Woodbury)
-	(W.U ≡ W.V' || W.U == W.V') && ishermitian(W.A) && ishermitian(W.C)
+import LinearAlgebra: issymmetric, ishermitian, isposdef, adjoint, transpose, inv
+
+inv(W::Woodbury) = Matrix(inverse(factorize(W)))
+# inv(W::Woodbury) = W \ Matrix(1.0I(size(W, 1)))
+
+# WARNING: sufficient but not necessary condition, useful for quick check
+_ishermitian(A::AbstractMatOrFac) = ishermitian(A)
+function _ishermitian(W::Woodbury)
+	W.U ≡ W.V' && _ishermitian(W.A) && _ishermitian(W.C)
 end
+ishermitian(W::Woodbury) = _ishermitian(W) || ishermitian(Matrix(W))
 issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
+
 function isposdef(W::Woodbury)
 	W.logabsdet isa Nothing ? isposdef(factorize(W)) : (W.logabsdet[2] > 0)
 end
@@ -147,7 +156,8 @@ function *(x::AbstractMatrix, W::Woodbury, y::AbstractVecOrMat)
     W.α(*(x, W.A, y), *(xU, W.C, Vy)) # can avoid two temporaries
 end
 
-\(W::Woodbury, B::AbstractVecOrMat) = factorize(W)\B
+\(W::Woodbury, B::AbstractVector) = factorize(W)\B
+\(W::Woodbury, B::AbstractMatrix) = factorize(W)\B
 /(B::AbstractMatrix, W::Woodbury) = B/factorize(W)
 
 ########################## Matrix inversion lemma ##############################
@@ -163,13 +173,14 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
 		D = factorize_D(W, W.V*A⁻¹U)
 		if T
 			l, s = _logabsdet(A, W.C, D, W.α)
-			W_logabsdet = (-l, s) # since we are taking the inverse
+			W_logabsdet = (-l, s) # -l since the result is packaged in an inverse
 		else
 			W_logabsdet = nothing
 		end
-		inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, switch_α(W.α), W_logabsdet))
+		α = switch_α(W.α)
+		return inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, α, W_logabsdet))
 	else
-		factorize(Matrix(W))
+		return factorize(Matrix(W))
 	end
 end
 
@@ -177,7 +188,7 @@ end
 compute_D(W::Woodbury) = compute_D!(W, *(W.V, inverse(W.A), W.U))
 function compute_D!(W::Woodbury, VAU)
 	invC = AbstractMatrix(inverse(W.C)) # because we need the dense inverse matrix
-	@. VAU = W.α(VAU, invC) # could be made more efficient with 5 arg mul
+	@. VAU = W.α(invC, VAU) # could be made more efficient with 5 arg mul
 	return VAU
 end
 factorize_D(W::Woodbury) = factorize_D(W, *(W.V, inverse(W.A), W.U))
@@ -185,7 +196,7 @@ function factorize_D(W::Woodbury, VAU)
 	D = compute_D!(W, VAU)
 	if size(D) == (1, 1)
 		return D
-	elseif ishermitian(W)
+	elseif _ishermitian(W)
 		try return cholesky(Hermitian(D)) catch end
 	end
 	return factorize(D)
@@ -227,20 +238,4 @@ end # WoodburyIdentity
 #     end
 #     print(io, "\nV:\n")
 #     Base.print_matrix(IOContext(io, :compact=>true), W.V)
-# end
-
-# TODO:
-# function ldiv!(W::Woodbury, B::AbstractVector)
-#     length(B) == size(W, 1) || throw(DimensionMismatch("Vector length $(length(B)) must match matrix size $(size(W,1))"))
-#     copyto!(W.tmpN1, B)
-#     Alu = lu(W.A) # Note. This makes an allocation (unless A::LU). Alternative is to destroy W.A.
-#     ldiv!(Alu, W.tmpN1)
-#     mul!(W.tmpk1, W.V, W.tmpN1)
-#     mul!(W.tmpk2, W.Cp, W.tmpk1)
-#     mul!(W.tmpN2, W.U, W.tmpk2)
-#     ldiv!(Alu, W.tmpN2)
-#     for i = 1:length(W.tmpN2)
-#         @inbounds B[i] = W.tmpN1[i] - W.tmpN2[i]
-#     end
-#     B
 # end

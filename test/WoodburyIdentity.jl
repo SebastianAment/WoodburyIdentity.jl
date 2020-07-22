@@ -3,6 +3,7 @@ using WoodburyIdentity
 using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
 using LazyInverse: inverse, Inverse
 using LinearAlgebra
+using LinearAlgebraExtensions: LowRank
 using Test
 
 function getW(n, m; diagonal = true, symmetric = false)
@@ -33,7 +34,8 @@ end
     @test eltype(W) == Float64
     @test issymmetric(W)
     @test ishermitian(W)
-    @test ishermitian(Woodbury(W.A, W.U, W.C, copy(W.U)')) # testing edge case
+    # @test ishermitian(MW)
+    # @test ishermitian(Woodbury(W.A, W.U, W.C, copy(W.U)')) # testing edge case
     @test !issymmetric(getW(n, m))
     @test !ishermitian(getW(n, m))
 
@@ -80,6 +82,7 @@ end
     # factorize
     F = factorize(W)
     @test Matrix(inverse(F)) ≈ inv(MW)
+    @test inv(W) ≈ inv(MW)
     @test logdet(F) ≈ logdet(MW)
     @test isposdef(F)
 
@@ -113,13 +116,28 @@ end
     W = Woodbury(A, u, v')
     @test Matrix(W) ≈ A + u*v'
 
-    # constructor with cholesky pivoted
+    # LowRank constructor
+    U = randn(n, 1)
+    L = LowRank(U, U')
+    A = Matrix(L)
+    W = Woodbury(I(n), L)
+
+    # CholeskyPivoted constructor
     A = randn(1, n)
     A = A'A
     C = cholesky(A, Val(true), check = false)
     W = Woodbury(A, C)
     @test W isa Woodbury
     @test Matrix(W) ≈ 2A
+
+    # tests with α = -
+    W = Woodbury(I(n), C, -)
+    @test Matrix(W) ≈ I(n) - A
+    @test inv(W) ≈ inv(I(n) - A)
+    FW = factorize(W)
+    @test Matrix(FW) ≈ I(n) - A
+    @test Matrix(inverse(FW)) ≈ inv(I(n) - A)
+
 end
 
 end # TestWoodburyIdentity
