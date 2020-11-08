@@ -131,13 +131,19 @@ end
     @test Matrix(W) ≈ 2A
 
     # tests with α = -
-    W = Woodbury(I(n), C, -)
+    W = Woodbury(I(n), C, -1)
     @test Matrix(W) ≈ I(n) - A
     @test inv(W) ≈ inv(I(n) - A)
     FW = factorize(W)
     @test Matrix(FW) ≈ I(n) - A
     @test Matrix(inverse(FW)) ≈ inv(I(n) - A)
-
+    MW = I(n) - A
+    # indexing
+    for i in 1:n, j in 1:n
+        @test W[i, j] ≈ MW[i, j]
+    end
+    @test tr(W) ≈ tr(MW)
+    @test diag(W) ≈ diag(MW)
 end
 
 end # TestWoodburyIdentity
