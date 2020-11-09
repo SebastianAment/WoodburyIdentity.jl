@@ -48,9 +48,14 @@ end
 Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = 1) = Woodbury(A, LowRank(C), α)
 
 woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
+# c is used to set threshold for conversion to Matrix
 function woodbury(A, U, C, V, α = 1, c::Real = 1)
     W = Woodbury(A, U, C, V, α)
-    # size(W.U, 1) > c * size(W.U, 2) ? W : Matrix(W) # only return Woodbury if it is efficient
+	#  only return Woodbury if it is efficient
+	if size(W.C, 1) ≥ c * size(W.U, 1) || size(W.C, 2) ≥ c * size(W.V, 2)
+		W = Matrix(W)
+	end
+	return W
 end
 
 # rank one correction
@@ -63,9 +68,7 @@ Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
 Base.eltype(W::Woodbury{T}) where {T} = T
 function Base.AbstractMatrix(W::Woodbury)
-	M = *(W.U, Matrix(W.C), W.V)
-	@. M = $Matrix(W.A) + W.α * M
-	# ishermitian(W) ? Hermitian(M) : M
+	Matrix(W.A) + W.α * *(W.U, W.C, W.V)
 end
 Base.Matrix(W::Woodbury) = AbstractMatrix(W)
 function Base.deepcopy(W::Woodbury)
