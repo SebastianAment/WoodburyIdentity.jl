@@ -24,7 +24,7 @@ struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
 					  C::AbstractMatOrFac, V::AbstractMatOrFac, α::Real = 1,
 					  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
 					  check::Bool = true)
-		 (α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested"))
+		 (α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
 		check && checkdims(A, U, C, V)
 		T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
 		F = typeof(α)
@@ -33,16 +33,22 @@ struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
 	end
 end
 
-real2mat(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
-function Woodbury(A::AbstractMatOrFac, U, C::Real, V, α::Real = 1, logabsdet = nothing)
-	Woodbury(A, U, real2mat(C), V, α, logabsdet)
+matrix(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
+matrix(x::AbstractVector) = reshape(x, (:, 1))
+matrix(x::AbstractMatOrFac) = x
+
+function Woodbury(A, U, C, V, α::Real = 1, abslogdet = nothing)
+	Woodbury(matrix.((A, U, C, V))..., α, abslogdet)
 end
-function Woodbury(A::Real, U, C, V, α::Real = 1, logabsdet = nothing)
-	Woodbury(real2mat(A), U, C, V, α, logabsdet)
+
+# low rank correction
+function Woodbury(A::AbstractMatOrFac, U, V = U', α::Real = 1, logabsdet = nothing)
+	Woodbury(A, LowRank(U, V), α, logabsdet)
 end
-function Woodbury(A::Real, U::Real, C::Real, V::Real, α::Real = 1, logabsdet = nothing)
-	Woodbury(real2mat.((A, U, C, V))..., α, logabsdet)
+function Woodbury(A::AbstractMatOrFac, L::LowRank, α = 1, logabsdet = nothing)
+    Woodbury(A, L.U, I(rank(L)), L.V, α, logabsdet)
 end
+Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = 1) = Woodbury(A, LowRank(C), α)
 
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
 function checkdims(A, U, C, V)
@@ -53,11 +59,6 @@ function checkdims(A, U, C, V)
 	size(V) ≠ (k, n) && throw(DimensionMismatch("Size of V ($(size(V)))"*s))
 	return true
 end
-
-function Woodbury(A::AbstractMatOrFac, L::LowRank, α = 1)
-    Woodbury(A, L.U, 1.0*I(rank(L)), L.V, α)
-end
-Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = 1) = Woodbury(A, LowRank(C), α)
 
 # pseudo-constructor?
 # c is used to set threshold for conversion to Matrix
@@ -71,11 +72,6 @@ function woodbury(A, U, C, V, α = 1, c::Real = 1)
 end
 woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
 
-# rank one correction
-Woodbury(A, u::AbstractVector, α = 1) = Woodbury(A, u, u', α)
-function Woodbury(A, u::AbstractVector, v::Adjoint{<:Number, <:AbstractVector}, α = 1)
-	Woodbury(A, reshape(u, :, 1), fill(1., (1, 1)), v, α)
-end
 ################################## Base ########################################
 Base.size(W::Woodbury) = size(W.A)
 Base.size(W::Woodbury, d) = size(W.A, d)
