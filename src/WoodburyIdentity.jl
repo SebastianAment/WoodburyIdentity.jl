@@ -20,15 +20,28 @@ struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
     V::VT
 	α::F # scalar, TODO: test if not ±1
 	logabsdet::L
-	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac, C, V::AbstractMatOrFac,
-		 α::Real = 1, logabsdet = nothing) # logabsdet::Union{NTuple{2, Real}, Nothing} = nothing
+	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
+					  C::AbstractMatOrFac, V::AbstractMatOrFac, α::Real = 1,
+					  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
+					  check::Bool = true)
 		 (α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested"))
-		checkdims(A, U, C, V)
+		check && checkdims(A, U, C, V)
 		T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
 		F = typeof(α)
 		AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
 		new{T, AT, UT, CT, VT, F, LT}(A, U, C, V, α, logabsdet) # tn1, tn2, tm1, tm2)
 	end
+end
+
+real2mat(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
+function Woodbury(A::AbstractMatOrFac, U, C::Real, V, α::Real = 1, logabsdet = nothing)
+	Woodbury(A, U, real2mat(C), V, α, logabsdet)
+end
+function Woodbury(A::Real, U, C, V, α::Real = 1, logabsdet = nothing)
+	Woodbury(real2mat(A), U, C, V, α, logabsdet)
+end
+function Woodbury(A::Real, U::Real, C::Real, V::Real, α::Real = 1, logabsdet = nothing)
+	Woodbury(real2mat.((A, U, C, V))..., α, logabsdet)
 end
 
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
@@ -41,13 +54,12 @@ function checkdims(A, U, C, V)
 	return true
 end
 
-# pseudo-constructor?
 function Woodbury(A::AbstractMatOrFac, L::LowRank, α = 1)
     Woodbury(A, L.U, 1.0*I(rank(L)), L.V, α)
 end
 Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = 1) = Woodbury(A, LowRank(C), α)
 
-woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
+# pseudo-constructor?
 # c is used to set threshold for conversion to Matrix
 function woodbury(A, U, C, V, α = 1, c::Real = 1)
     W = Woodbury(A, U, C, V, α)
@@ -57,6 +69,7 @@ function woodbury(A, U, C, V, α = 1, c::Real = 1)
 	end
 	return W
 end
+woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
 
 # rank one correction
 Woodbury(A, u::AbstractVector, α = 1) = Woodbury(A, u, u', α)
@@ -160,7 +173,6 @@ Base.:(\)(W::Woodbury, B::AbstractVector) = factorize(W)\B
 Base.:(\)(W::Woodbury, B::AbstractMatrix) = factorize(W)\B
 Base.:(/)(B::AbstractMatrix, W::Woodbury) = B/factorize(W)
 
-# using LinearAlgebra: checksquare
 function LinearAlgebra.diag(W::Woodbury)
     n = checksquare(W)
     d = zeros(eltype(W), n)

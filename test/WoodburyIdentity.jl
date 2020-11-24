@@ -23,6 +23,7 @@ end
     MW = Matrix(W)
     @test size(W) == (n, n)
     x = randn(size(W, 2))
+
     # multiplication
     @test W*x ≈ MW*x
     @test x'W ≈ x'MW
@@ -144,6 +145,22 @@ end
     end
     @test tr(W) ≈ tr(MW)
     @test diag(W) ≈ diag(MW)
+
+    # Woodbury structure with 1d outer dimension
+    a, b, c, d = randn(4)
+    W = Woodbury(a, b, c, d)
+    MW = Matrix(W)
+    @test size(MW) == (1, 1)
+    @test MW[1, 1] ≈ a + *(b, c, d)
+
+    a = randn()
+    B = randn(1, n)
+    C = randn(n, n)
+    D = randn(n, 1)
+    W = Woodbury(a, B, C, D)
+    MW = Matrix(W)
+    @test size(MW) == (1, 1)
+    @test MW[1, 1] ≈ a + dot(B, C, D)
 end
 
 end # TestWoodburyIdentity
