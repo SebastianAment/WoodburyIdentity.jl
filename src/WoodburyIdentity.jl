@@ -10,8 +10,9 @@ using LinearAlgebraExtensions: AbstractMatOrFac
 using LinearAlgebraExtensions: LowRank
 
 export Woodbury
-# things that prevent C from being a scalar: checkdims, factorize, ...
+
 # represents A + αUCV
+# things that prevent C from being a scalar: checkdims, factorize, ...
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
 struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
     A::AT
@@ -42,13 +43,17 @@ function Woodbury(A, U, C, V, α::Real = 1, abslogdet = nothing)
 end
 
 # low rank correction
-function Woodbury(A::AbstractMatOrFac, U, V = U', α::Real = 1, logabsdet = nothing)
+# NOTE: cannot rid of type restriction on A without introducing ambiguities
+function Woodbury(A::AbstractMatOrFac, U::AbstractVecOrMat, V::AbstractMatrix = U',
+	 			  α::Real = 1, logabsdet = nothing)
 	Woodbury(A, LowRank(U, V), α, logabsdet)
 end
-function Woodbury(A::AbstractMatOrFac, L::LowRank, α = 1, logabsdet = nothing)
+function Woodbury(A, L::LowRank, α::Real = 1, logabsdet = nothing)
     Woodbury(A, L.U, I(rank(L)), L.V, α, logabsdet)
 end
-Woodbury(A::AbstractMatrix, C::CholeskyPivoted, α = 1) = Woodbury(A, LowRank(C), α)
+function Woodbury(A, C::CholeskyPivoted, α::Real = 1, logabsdet = nothing)
+	Woodbury(A, LowRank(C), α, logabsdet)
+end
 
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
 function checkdims(A, U, C, V)
