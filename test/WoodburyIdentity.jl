@@ -117,6 +117,10 @@ end
     W = Woodbury(A, u, v')
     @test Matrix(W) ≈ A + u*v'
 
+    x = randn(n)
+    b = W*x
+    @test W \ b ≈ x
+
     # LowRank constructor
     U = randn(n, 1)
     L = LowRank(U, U')
@@ -161,6 +165,9 @@ end
     MW = Matrix(W)
     @test size(MW) == (1, 1)
     @test MW[1, 1] ≈ a + dot(B, C, D)
+
+    @test inv(W) isa Real
+    @test factorize(W) isa Real
 end
 
 end # TestWoodburyIdentity

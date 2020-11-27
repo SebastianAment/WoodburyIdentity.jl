@@ -36,6 +36,7 @@ end
 
 matrix(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
 matrix(x::AbstractVector) = reshape(x, (:, 1))
+matrix(x::Adjoint{<:Any, <:AbstractVector}) = reshape(x, (1, :))
 matrix(x::AbstractMatOrFac) = x
 
 function Woodbury(A, U, C, V, α::Real = 1, abslogdet = nothing)
@@ -92,7 +93,7 @@ function Base.deepcopy(W::Woodbury)
 end
 Base.copy(W::Woodbury) = deepcopy(W)
 
-Base.inv(W::Woodbury) = Matrix(inverse(factorize(W)))
+Base.inv(W::Woodbury) = inv(factorize(W))
 
 # sufficient but not necessary condition, useful for quick check
 _ishermitian(A::AbstractMatOrFac) = ishermitian(A)
@@ -202,14 +203,14 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
 		α = -W.α # switch sign
 		return inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, α, W_logabsdet))
 	else
-		return factorize(Matrix(W))
+		return factorize(AbstractMatrix(W))
 	end
 end
 
 ##################### conveniences for D = C⁻¹ ± V*A⁻¹*U ########################
 compute_D(W::Woodbury) = compute_D!(W, *(W.V, inverse(W.A), W.U))
 function compute_D!(W::Woodbury, VAU)
-	invC = AbstractMatrix(inverse(W.C)) # because we need the dense inverse matrix
+	invC = inv(W.C) # because we need the dense inverse matrix
 	@. VAU = invC + W.α * VAU # could be made more efficient with 5 arg mul
 	return VAU
 end

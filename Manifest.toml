@@ -143,13 +143,13 @@ version = "0.21.1"
 
 [[LazyArrays]]
 deps = ["ArrayLayouts", "FillArrays", "LinearAlgebra", "MacroTools", "MatrixFactorizations", "SparseArrays", "StaticArrays"]
-git-tree-sha1 = "20bd3e6095145e26bf5da32d2530c94654f84833"
+git-tree-sha1 = "3f9525c9b901ea3935d23a588db6b026baede23d"
 uuid = "5078a376-72f3-5289-bfd5-ec5146d43c02"
-version = "0.19.1"
+version = "0.19.3"
 
 [[LazyInverse]]
 deps = ["LinearAlgebra", "Test"]
-git-tree-sha1 = "956270f7d4e3cb993c92a03119927f5ba9265ff3"
+git-tree-sha1 = "31c384b494aaf4220e3724e9ca1e94839b643f42"
 repo-rev = "master"
 repo-url = "git@github.com:SebastianAment/LazyInverse.jl.git"
 uuid = "d0afe1cb-6484-4949-b9e9-61bc645ed6c7"
@@ -307,9 +307,9 @@ version = "1.0.0"
 
 [[StaticArrays]]
 deps = ["LinearAlgebra", "Random", "Statistics"]
-git-tree-sha1 = "da4cf579416c81994afd6322365d00916c79b8ae"
+git-tree-sha1 = "794e88df12426adc7eb3370b4ec3aee12f8d6911"
 uuid = "90137ffa-7385-5640-81b9-e52037218182"
-version = "0.12.5"
+version = "1.0.0"
 
 [[Statistics]]
 deps = ["LinearAlgebra", "SparseArrays"]
