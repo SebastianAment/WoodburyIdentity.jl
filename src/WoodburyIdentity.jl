@@ -2,6 +2,7 @@ module WoodburyIdentity
 using LinearAlgebra
 using LinearAlgebra: checksquare
 
+# IDEA: can optimize threshold constant c which makes WoodburyIdentity computationally beneficial
 # using LazyArrays: applied, ApplyMatrix
 import LazyInverse: inverse, Inverse
 
@@ -183,12 +184,15 @@ function LinearAlgebra.diag(W::Woodbury)
     end
     return d
 end
+
 ########################## Matrix inversion lemma ##############################
 # figure out constant c for which woodbury is most efficient
 # could implement this in WoodburyMatrices and PR
 function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
 									compute_logdet::Val{T} = Val(true)) where T
-    if size(W.U, 1) > c*size(W.U, 2) # only use Woodbury identity when it is beneficial to do so
+	if size(W.U, 1) < c*size(W.U, 2)
+		return factorize(AbstractMatrix(W))
+	else # only use Woodbury identity when it is beneficial to do so
 		A = factorize(W.A)
 		A⁻¹ = inverse(A)
 		A⁻¹U = A⁻¹ * W.U
@@ -202,8 +206,6 @@ function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
 		end
 		α = -W.α # switch sign
 		return inverse(Woodbury(A⁻¹, A⁻¹U, inverse(D), VA⁻¹, α, W_logabsdet))
-	else
-		return factorize(AbstractMatrix(W))
 	end
 end
 
