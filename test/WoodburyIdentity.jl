@@ -17,7 +17,7 @@ function getW(n, m; diagonal = true, symmetric = false)
 end
 
 @testset "Woodbury" begin
-    n = 3
+    n = 5
     m = 2
     W = getW(n, m, symmetric = true)
     MW = Matrix(W)
@@ -31,6 +31,23 @@ end
     X = randn(size(W, 2), 3)
     @test W*X ≈ MW*X
     @test X'*W ≈ X'*MW
+
+    # in-place multiplication
+    y = randn(size(W, 1)) # with vector
+    α, β = randn(2)
+    b = α*(W*x) + β*y
+    mul!(y, W, x, α, β)
+    @test y ≈ b
+
+    Y = randn(size(W, 1), size(X, 2)) # with matrix
+    α, β = randn(2)
+    B = α*(W*X) + β*Y
+    mul!(Y, W, X, α, β)
+    @test Y ≈ B
+
+    @test α*W isa Woodbury
+    @test Matrix(α*W) ≈ α*Matrix(W) # with scalar
+    @test logdet(abs(α)*W) ≈ logdet(abs(α)*Matrix(W)) # checking that logdet works correctly
 
     @test eltype(W) == Float64
     @test issymmetric(W)

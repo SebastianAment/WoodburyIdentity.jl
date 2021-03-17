@@ -7,8 +7,7 @@ using LinearAlgebra: checksquare
 import LazyInverse: inverse, Inverse
 
 using LinearAlgebraExtensions
-using LinearAlgebraExtensions: AbstractMatOrFac
-using LinearAlgebraExtensions: LowRank
+using LinearAlgebraExtensions: AbstractMatOrFac, LowRank
 
 export Woodbury
 
@@ -137,25 +136,27 @@ function LinearAlgebra.tr(W::Woodbury)
 end
 
 ######################## Linear Algebra primitives #############################
+Base.:*(a::Number, W::Woodbury) = Woodbury(a*W.A, W.U, a*W.C, W.V, W.α) # IDEA: could take over logabsdet efficiently
+Base.:*(W::Woodbury, a::Number) = a*W
+
 Base.:*(W::Woodbury, x::AbstractVecOrMat) = mul!(similar(x), W, x)
 Base.:*(B::AbstractMatrix, W::Woodbury) = (W'*B')'
-function LinearAlgebra.mul!(y::AbstractVector, W::Woodbury, x::AbstractVector)
-	t = similar(x, size(W.V, 1))
-	mul!!(y, W, x, t)
+function LinearAlgebra.mul!(y::AbstractVector, W::Woodbury, x::AbstractVector, α::Real = 1, β::Real = 0)
+	s = similar(x, size(W.V, 1))
+	t = similar(x, size(W.U, 2))
+	mul!!(y, W, x, α, β, s, t)
 end
-function LinearAlgebra.mul!(y::AbstractMatrix, W::Woodbury, x::AbstractMatrix)
-	t = similar(x, size(W.V, 1), size(x, 2))
-	mul!!(y, W, x, t)
+function LinearAlgebra.mul!(y::AbstractMatrix, W::Woodbury, x::AbstractMatrix, α::Real = 1, β::Real = 0)
+	s = similar(x, size(W.V, 1), size(x, 2))
+	t = similar(x, size(W.U, 2), size(x, 2))
+	mul!!(y, W, x, α, β, s, t)
 end
 
-# stores result in y, uses temporary t
-function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, t::AbstractVecOrMat)
-	k = size(W.V, 1)
-	yk = y isa AbstractVector ? view(y, 1:k) : view(y, 1:k, :) # matrix memory alignment could be better
-	mul!(yk, W.V, x)
-	mul!(t, W.C, yk)
-	mul!(y, W.U, t)
- 	mul!(y, W.A, x, 1, W.α)
+function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, α::Real, β::Real, s, t)
+	mul!(s, W.V, x)
+	mul!(t, W.C, s)
+	mul!(y, W.U, t, α * W.α, β)
+ 	mul!(y, W.A, x, α, 1)
 end
 
 # ternary dot
