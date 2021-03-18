@@ -23,21 +23,39 @@ struct Woodbury{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
 	α::F # scalar, TODO: test if not ±1
 	logabsdet::L
 	temporaries::TT
-	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
-					  C::AbstractMatOrFac, V::AbstractMatOrFac, α::Real = 1,
-					  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
-					  check::Bool = true)
-		(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
-		check && checkdims(A, U, C, V)
-		T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
-		F = typeof(α)
-		AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
-		tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
-		temporaries = (tu, tv)
-		TT = typeof(temporaries)
-		new{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
-	end
 end
+
+function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
+				  C::AbstractMatOrFac, V::AbstractMatOrFac,
+				  α::Real = 1, logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
+				  check::Bool = true)
+	(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
+	check && checkdims(A, U, C, V)
+	T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
+	F = typeof(α)
+	AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
+	tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
+	temporaries = (tu, tv)
+	TT = typeof(temporaries)
+	Woodbury{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
+end
+
+function Woodbury(A::AbstractMatOrFac, U::AbstractVector,
+				  C::Real, V::Adjoint{<:Any, <:AbstractVector}, α::Real = 1,
+				  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
+				  check::Bool = true)
+	(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
+	check && checkdims(A, U, C, V)
+	T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
+	F = typeof(α)
+	AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
+	tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
+	temporaries = (tu, tv)
+	TT = typeof(temporaries)
+	Woodbury{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
+end
+
+const RankOneCorrection = Woodbury{<:Any, <:Any, <:AbstractVector, <:Any, <:Adjoint{<:Any, <:AbstractVector}}
 
 # casts all inputs to an equivalent Matrix
 matrix(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
@@ -51,24 +69,28 @@ end
 
 # low rank correction
 # NOTE: cannot rid of type restriction on A without introducing ambiguities
-function Woodbury(A::AbstractMatOrFac, U::AbstractVecOrMat, V::AbstractMatrix = U',
+function Woodbury(A::AbstractMatOrFac, U::AbstractVector, V::Adjoint = U',
 	 			  α::Real = 1, logabsdet = nothing)
-	Woodbury(A, LowRank(U, V), α, logabsdet)
+	Woodbury(A, U, 1., V, α, logabsdet)
+end
+function Woodbury(A::AbstractMatOrFac, U::AbstractMatrix, V::AbstractMatrix = U',
+	 			  α::Real = 1, logabsdet = nothing)
+	Woodbury(A, U, 1.0I(size(U, 2)), V, α, logabsdet)
 end
 function Woodbury(A, L::LowRank, α::Real = 1, logabsdet = nothing)
-    Woodbury(A, L.U, I(rank(L)), L.V, α, logabsdet)
+    Woodbury(A, L.U, 1.0I(size(L.U, 2)), L.V, α, logabsdet)
 end
 function Woodbury(A, C::CholeskyPivoted, α::Real = 1, logabsdet = nothing)
 	Woodbury(A, LowRank(C), α, logabsdet)
 end
-
+LinearAlgebra.checksquare(::Number) = 1 # since size(::Number, ::Int) = 1
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
 function checkdims(A, U, C, V)
 	n = checksquare(A)
 	k = checksquare(C)
 	s = "is inconsistent with A ($(size(A))) and C ($(size(C)))"
-	size(U) ≠ (n, k) && throw(DimensionMismatch("Size of U ($(size(U)))"*s))
-	size(V) ≠ (k, n) && throw(DimensionMismatch("Size of V ($(size(V)))"*s))
+	!(size(U, 1) == n && size(U, 2) == k) && throw(DimensionMismatch("Size of U ($(size(U)))"*s))
+	!(size(V, 1) == k && size(V, 2) == n) && throw(DimensionMismatch("Size of V ($(size(V)))"*s))
 	return true
 end
 
@@ -102,18 +124,15 @@ Base.copy(W::Woodbury) = deepcopy(W)
 Base.inv(W::Woodbury) = inv(factorize(W))
 
 # sufficient but not necessary condition, useful for quick check
-_ishermitian(A::AbstractMatOrFac) = ishermitian(A)
+_ishermitian(A::Union{Real, AbstractMatOrFac}) = ishermitian(A)
 function _ishermitian(W::Woodbury)
 	(W.U ≡ W.V' || W.U == W.V') && _ishermitian(W.A) && _ishermitian(W.C)
 end
 # if efficiently-verifiable sufficient condition fails, check matrix
-function LinearAlgebra.ishermitian(W::Woodbury)
-	_ishermitian(W) || ishermitian(Matrix(W))
-end
-function LinearAlgebra.issymmetric(W::Woodbury)
-	eltype(W) <: Real && ishermitian(W)
-end
+LinearAlgebra.ishermitian(W::Woodbury) = _ishermitian(W) || ishermitian(Matrix(W))
+LinearAlgebra.issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
 
+LinearAlgebra.logabsdet(x) = log(abs(x)), sign(x)
 function LinearAlgebra.isposdef(W::Woodbury)
 	W.logabsdet isa Nothing ? isposdef(factorize(W)) : (W.logabsdet[2] > 0)
 end
@@ -175,6 +194,14 @@ function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, α::Real, 
  	mul!(y, W.A, x, α, 1)
 end
 
+# special case: rank one correction does not need additional temporaries for MVM
+function LinearAlgebra.mul!(y::AbstractVector, W::RankOneCorrection, x::AbstractVector, α::Real = 1, β::Real = 0)
+	s = dot(W.V', x)
+	t = W.C * s
+	@. y = (α * W.α) * W.U * t + β * y
+ 	mul!(y, W.A, x, α, 1)
+end
+
 # ternary dot
 function LinearAlgebra.dot(x::AbstractVecOrMat, W::Woodbury, y::AbstractVector)
     Ux = W.U'x     # memory allocation can be avoided (with lazy arrays?)
@@ -231,8 +258,8 @@ compute_D(W::Woodbury) = compute_D!(W, *(W.V, inverse(W.A), W.U))
 function compute_D!(W::Woodbury, VAU)
 	invC = inv(W.C) # because we need the dense inverse matrix
 	@. VAU = invC + W.α * VAU # could be made more efficient with 5 arg mul
-	return VAU
 end
+compute_D!(W::Woodbury, VAU::Real) = inv(W.C) + W.α * VAU
 factorize_D(W::Woodbury) = factorize_D(W, *(W.V, inverse(W.A), W.U))
 function factorize_D(W::Woodbury, VAU)
 	D = compute_D!(W, VAU)
