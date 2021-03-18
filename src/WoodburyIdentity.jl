@@ -14,26 +14,32 @@ export Woodbury
 # represents A + αUCV
 # things that prevent C from being a scalar: checkdims, factorize, ...
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
-struct Woodbury{T, AT, UT, CT, VT, F, L} <: Factorization{T}
+# IDEA: try allowing rank 1 correct to be expressed with vector / adjoint
+struct Woodbury{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
     A::AT
     U::UT
     C::CT
     V::VT
 	α::F # scalar, TODO: test if not ±1
 	logabsdet::L
+	temporaries::TT
 	function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
 					  C::AbstractMatOrFac, V::AbstractMatOrFac, α::Real = 1,
 					  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
 					  check::Bool = true)
-		 (α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
+		(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
 		check && checkdims(A, U, C, V)
 		T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
 		F = typeof(α)
 		AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
-		new{T, AT, UT, CT, VT, F, LT}(A, U, C, V, α, logabsdet) # tn1, tn2, tm1, tm2)
+		tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
+		temporaries = (tu, tv)
+		TT = typeof(temporaries)
+		new{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
 	end
 end
 
+# casts all inputs to an equivalent Matrix
 matrix(x::Real) = fill(x, (1, 1)) # could in principle extend Matrix
 matrix(x::AbstractVector) = reshape(x, (:, 1))
 matrix(x::Adjoint{<:Any, <:AbstractVector}) = reshape(x, (1, :))
@@ -142,14 +148,24 @@ Base.:*(W::Woodbury, a::Number) = a*W
 Base.:*(W::Woodbury, x::AbstractVecOrMat) = mul!(similar(x), W, x)
 Base.:*(B::AbstractMatrix, W::Woodbury) = (W'*B')'
 function LinearAlgebra.mul!(y::AbstractVector, W::Woodbury, x::AbstractVector, α::Real = 1, β::Real = 0)
-	s = similar(x, size(W.V, 1))
-	t = similar(x, size(W.U, 2))
+	s, t = get_temporaries(W, x)
 	mul!!(y, W, x, α, β, s, t)
 end
 function LinearAlgebra.mul!(y::AbstractMatrix, W::Woodbury, x::AbstractMatrix, α::Real = 1, β::Real = 0)
+	s, t = get_temporaries(W, x)
+	mul!!(y, W, x, α, β, s, t) # Pre-allocate!
+end
+# allocates s, t arrays for multiplication if not pre-allocated in W
+# function get_temporaries(W::Woodbury, x::AbstractVector)
+# 	# s = similar(x, size(W.V, 1))
+# 	# t = similar(x, size(W.U, 2))
+# 	return W.temporaries
+# end
+get_temporaries(W::Woodbury, x::AbstractVector) = W.temporaries
+function get_temporaries(W::Woodbury, x::AbstractMatrix)
 	s = similar(x, size(W.V, 1), size(x, 2))
 	t = similar(x, size(W.U, 2), size(x, 2))
-	mul!!(y, W, x, α, β, s, t)
+	return s, t
 end
 
 function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, α::Real, β::Real, s, t)
