@@ -93,6 +93,14 @@ end
     for i in 1:n, j in 1:n
         @test W[i, j] ≈ MW[i, j]
     end
+    i = 1:2
+    j = 3:3
+    Wij = W[i, j]
+    @test Wij isa Woodbury
+    @test Wij[1, 1] == W[1, 3]
+    Wij = @view W[i, j]
+    @test Wij isa Woodbury
+    @test Wij.U isa SubArray
 
     # trace
     @test tr(W) ≈ tr(MW)

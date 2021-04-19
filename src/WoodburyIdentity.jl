@@ -27,30 +27,28 @@ end
 
 function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
 				  C::AbstractMatOrFac, V::AbstractMatOrFac,
-				  α::Real = 1, logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
+				  α::Real = 1, logabsdet::Union{NTuple{2, Real}, Nothing} = nothing,
+				  temporaries = allocate_temporaries(U, V);
 				  check::Bool = true)
 	(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
 	check && checkdims(A, U, C, V)
 	T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
 	F = typeof(α)
 	AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
-	tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
-	temporaries = (tu, tv)
 	TT = typeof(temporaries)
 	Woodbury{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
 end
 
 function Woodbury(A::AbstractMatOrFac, U::AbstractVector,
 				  C::Real, V::Adjoint{<:Any, <:AbstractVector}, α::Real = 1,
-				  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing;
+				  logabsdet::Union{NTuple{2, Real}, Nothing} = nothing,
+				  temporaries = allocate_temporaries(U, V);
 				  check::Bool = true)
 	(α == 1 || α == -1) || throw(DomainError("α ≠ ±1 not yet tested: α = $α"))
 	check && checkdims(A, U, C, V)
 	T = promote_type(typeof(α), eltype.((A, U, C, V))...)	# check promote_type
 	F = typeof(α)
 	AT, UT, CT, VT, LT = typeof.((A, U, C, V, logabsdet))
-	tu, tv = zeros(T, size(V, 1)), zeros(T, size(U, 2)) # temporary arrays for matrix multiplication
-	temporaries = (tu, tv)
 	TT = typeof(temporaries)
 	Woodbury{T, AT, UT, CT, VT, F, LT, TT}(A, U, C, V, α, logabsdet, temporaries)
 end
@@ -86,11 +84,11 @@ end
 LinearAlgebra.checksquare(::Number) = 1 # since size(::Number, ::Int) = 1
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
 function checkdims(A, U, C, V)
-	n = checksquare(A)
-	k = checksquare(C)
+	n, m = A isa Number ? (1, 1) : size(A)
+	k, l = C isa Number ? (1, 1) : size(C)
 	s = "is inconsistent with A ($(size(A))) and C ($(size(C)))"
-	!(size(U, 1) == n && size(U, 2) == k) && throw(DimensionMismatch("Size of U ($(size(U)))"*s))
-	!(size(V, 1) == k && size(V, 2) == n) && throw(DimensionMismatch("Size of V ($(size(V)))"*s))
+	!(size(U, 1) == n && size(U, 2) == k) && throw(DimensionMismatch("Size of U ($(size(U))) "*s))
+	!(size(V, 1) == l && size(V, 2) == m) && throw(DimensionMismatch("Size of V ($(size(V))) "*s))
 	return true
 end
 
@@ -143,17 +141,26 @@ function LinearAlgebra.transpose(W::Woodbury)
 	issymmetric(W) ? W : Woodbury(transpose.((W.A, W.V, W.C, W.U))..., W.α, W.logabsdet)
 end
 
-# WARNING: creates views of previous object, so mutating it changes the original object
-function Base.getindex(W::Woodbury, i::UnitRange, j::UnitRange)
-	A = view(W.A, i, j)
-	U = view(W.U, i, :)
-	V = U ≡ V' ? U' : view(W.V, :, j)
+# indexed by two integers returns scalar
+function Base.getindex(W::Woodbury, i, j)
+	W.A[i, j] + W.α * *(W.U[i, :], W.C, W.V[:, j])
+end
+function Base.getindex(W::Woodbury, i::Int, j)
+	u = @view W.U[i, :]
+	W.A[i, j] + W.α * *(u', W.C, W.V[:, j])
+end
+# indexed by two vectors other, returns woodbury
+function Base.getindex(W::Woodbury, i::AbstractVector, j::AbstractVector)
+	A = W.A[i, j]
+	U = W.U[i, :]
+	V = W.U ≡ W.V' && i == j ? U' : W.V[:, j]
 	return Woodbury(A, U, W.C, V, W.α, nothing)
 end
-function Base.getindex(W::Woodbury, i::Int, j::Int)
-	u = view(W.U, i, :)
-	v = view(W.V, :, j)
-	return W.A[i,j] + W.α * dot(u, W.C, v)
+function Base.view(W::Woodbury, i, j) # WARNING: this also takes temporaries
+	A = view(W.A, i, j)
+	U = view(W.U, i, :)
+	V = W.U ≡ W.V' && i == j ? U' : view(W.V, :, j)
+	return Woodbury(A, U, W.C, V, W.α, nothing, W.temporaries)
 end
 function LinearAlgebra.tr(W::Woodbury)
 	n = checksquare(W)
@@ -175,23 +182,40 @@ function LinearAlgebra.mul!(y::AbstractMatrix, W::Woodbury, x::AbstractMatrix, �
 	mul!!(y, W, x, α, β, s, t) # Pre-allocate!
 end
 # allocates s, t arrays for multiplication if not pre-allocated in W
-# function get_temporaries(W::Woodbury, x::AbstractVector)
-# 	# s = similar(x, size(W.V, 1))
-# 	# t = similar(x, size(W.U, 2))
-# 	return W.temporaries
-# end
-get_temporaries(W::Woodbury, x::AbstractVector) = W.temporaries
-function get_temporaries(W::Woodbury, x::AbstractMatrix)
-	s = similar(x, size(W.V, 1), size(x, 2))
-	t = similar(x, size(W.U, 2), size(x, 2))
+allocate_temporaries(W::Woodbury, T::DataType = Float64) = allocate_temporaries(W.U, W.V, T)
+function allocate_temporaries(W::Woodbury, n::Int, T::DataType = Float64)
+	allocate_temporaries(W.U, W.V, n, T)
+end
+function allocate_temporaries(U, V, T::DataType = Float64)
+	allocate_temporaries(size(U, 2), size(V, 1), T)
+end
+function allocate_temporaries(U, V, n::Int, T::DataType = Float64)
+	allocate_temporaries(size(U, 2), size(V, 1), n, T)
+end
+function allocate_temporaries(nu::Int, nv::Int, T::DataType = Float64)
+	s = zeros(T, nv)
+	t = zeros(T, nu)
 	return s, t
+end
+function allocate_temporaries(nu::Int, nv::Int, n::Int, T::DataType = Float64)
+	s = zeros(T, nv, n)
+	t = zeros(T, nv, n)
+	return s, t
+end
+function get_temporaries(W::Woodbury, x::AbstractVector)
+	T = promote_type(eltype(x), eltype(W))
+	W.temporaries isa Tuple{<:AbstractVector{T}} ? W.temporaries : allocate_temporaries(W, eltype(x))
+end
+function get_temporaries(W::Woodbury, X::AbstractMatrix)
+	T = promote_type(eltype(X), eltype(W))
+	W.temporaries isa Tuple{<:AbstractMatrix{T}} ? W.temporaries : allocate_temporaries(W, size(X, 2), eltype(X))
 end
 
 function mul!!(y::AbstractVecOrMat, W::Woodbury, x::AbstractVecOrMat, α::Real, β::Real, s, t)
 	mul!(s, W.V, x)
 	mul!(t, W.C, s)
 	mul!(y, W.U, t, α * W.α, β)
- 	mul!(y, W.A, x, α, 1)
+ 	mul!(y, W.A, x, α, 1) # this allocates if D is diagonal due to broadcasting mechanism
 end
 
 # special case: rank one correction does not need additional temporaries for MVM
@@ -234,6 +258,7 @@ end
 # could implement this in WoodburyMatrices and PR
 function LinearAlgebra.factorize(W::Woodbury, c::Real = 1,
 									compute_logdet::Val{T} = Val(true)) where T
+	checksquare(W)
 	if size(W.U, 1) < c*size(W.U, 2)
 		return factorize(AbstractMatrix(W))
 	else # only use Woodbury identity when it is beneficial to do so
