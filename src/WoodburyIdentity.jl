@@ -124,7 +124,11 @@ Base.inv(W::Woodbury) = inv(factorize(W))
 # sufficient but not necessary condition, useful for quick check
 _ishermitian(A::Union{Real, AbstractMatOrFac}) = ishermitian(A)
 function _ishermitian(W::Woodbury)
-	(W.U ≡ W.V' || W.U == W.V') && _ishermitian(W.A) && _ishermitian(W.C)
+	try
+		(W.U ≡ W.V' || W.U == W.V') && _ishermitian(W.A) && _ishermitian(W.C)
+	catch e
+		return false
+	end
 end
 # if efficiently-verifiable sufficient condition fails, check matrix
 LinearAlgebra.ishermitian(W::Woodbury) = _ishermitian(W) || ishermitian(Matrix(W))
@@ -147,7 +151,7 @@ function Base.getindex(W::Woodbury, i, j)
 end
 function Base.getindex(W::Woodbury, i::Int, j)
 	u = @view W.U[i, :]
-	W.A[i, j] + W.α * *(u', W.C, W.V[:, j])
+	W.A[i, j] + W.α * dot(u, W.C * W.V[:, j])
 end
 # indexed by two vectors other, returns woodbury
 function Base.getindex(W::Woodbury, i::AbstractVector, j::AbstractVector)
@@ -248,7 +252,7 @@ function LinearAlgebra.diag(W::Woodbury)
     n = checksquare(W)
     d = zeros(eltype(W), n)
     for i in 1:n
-        d[i] = W[i,i]
+        d[i] = W[i, i]
     end
     return d
 end
