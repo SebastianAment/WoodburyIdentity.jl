@@ -147,11 +147,8 @@ end
 
 # indexed by two integers returns scalar
 function Base.getindex(W::Woodbury, i, j)
-	W.A[i, j] + W.α * *(W.U[i, :], W.C, W.V[:, j])
-end
-function Base.getindex(W::Woodbury, i::Int, j)
-	u = @view W.U[i, :]
-	W.A[i, j] + W.α * dot(u, W.C * W.V[:, j])
+	Ui = i isa Integer ? W.U[i, :]' : W.U[i, :]
+	W.A[i, j] + W.α * *(Ui, W.C, W.V[:, j])
 end
 # indexed by two vectors other, returns woodbury
 function Base.getindex(W::Woodbury, i::AbstractVector, j::AbstractVector)
