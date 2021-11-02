@@ -6,15 +6,12 @@ using LinearAlgebra: checksquare
 # using LazyArrays: applied, ApplyMatrix
 import LazyInverse: inverse, Inverse
 
-using LinearAlgebraExtensions
-using LinearAlgebraExtensions: AbstractMatOrFac, LowRank
-
+const AbstractMatOrFac{T} = Union{AbstractMatrix{T}, Factorization{T}}
 export Woodbury
 
 # represents A + αUCV
 # things that prevent C from being a scalar: checkdims, factorize, ...
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
-# IDEA: try allowing rank 1 correct to be expressed with vector / adjoint
 struct Woodbury{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
     A::AT
     U::UT
@@ -69,17 +66,20 @@ end
 # NOTE: cannot rid of type restriction on A without introducing ambiguities
 function Woodbury(A::AbstractMatOrFac, U::AbstractVector, V::Adjoint = U',
 	 			  α::Real = 1, logabsdet = nothing)
-	Woodbury(A, U, 1., V, α, logabsdet)
+	T = eltype(A)
+	Woodbury(A, U, one(T), V, α, logabsdet)
 end
 function Woodbury(A::AbstractMatOrFac, U::AbstractMatrix, V::AbstractMatrix = U',
 	 			  α::Real = 1, logabsdet = nothing)
-	Woodbury(A, U, 1.0I(size(U, 2)), V, α, logabsdet)
+	T = eltype(A)
+	Woodbury(A, U, (one(T)*I)(size(U, 2)), V, α, logabsdet)
 end
-function Woodbury(A, L::LowRank, α::Real = 1, logabsdet = nothing)
-    Woodbury(A, L.U, 1.0I(size(L.U, 2)), L.V, α, logabsdet)
-end
+# function Woodbury(A, L::LowRank, α::Real = 1, logabsdet = nothing)
+#     Woodbury(A, L.U, 1.0I(size(L.U, 2)), L.V, α, logabsdet)
+# end
 function Woodbury(A, C::CholeskyPivoted, α::Real = 1, logabsdet = nothing)
-	Woodbury(A, LowRank(C), α, logabsdet)
+	U = C.U[1:C.rank, invperm(C.p)]
+	Woodbury(A, U', U, α, logabsdet)
 end
 LinearAlgebra.checksquare(::Number) = 1 # since size(::Number, ::Int) = 1
 # checks if the dimensions of A, U, C, V are consistent to form a Woodbury factorization
@@ -102,7 +102,7 @@ function woodbury(A, U, C, V, α = 1, c::Real = 1)
 	end
 	return W
 end
-woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
+# woodbury(A, L::LowRank, α = 1) = Woodbury(A, L, α)
 
 ################################## Base ########################################
 Base.size(W::Woodbury) = size(W.A)
@@ -134,7 +134,13 @@ end
 LinearAlgebra.ishermitian(W::Woodbury) = _ishermitian(W) || ishermitian(Matrix(W))
 LinearAlgebra.issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
 
-LinearAlgebra.logabsdet(x) = log(abs(x)), sign(x)
+# type piracy, to incorporate into Base
+LinearAlgebra.logabsdet(x::Number) = log(abs(x)), sign(x)
+LinearAlgebra.logabsdet(x::Cholesky) = logdet(x), one(eltype(x))
+LinearAlgebra.logabsdet(x::CholeskyPivoted) = logdet(x), one(eltype(x))
+LinearAlgebra.adjoint(x::Union{Cholesky, CholeskyPivoted}) = x
+LinearAlgebra.factorize(x::Number) = x
+
 function LinearAlgebra.isposdef(W::Woodbury)
 	W.logabsdet isa Nothing ? isposdef(factorize(W)) : (W.logabsdet[2] > 0)
 end
@@ -157,7 +163,9 @@ function Base.getindex(W::Woodbury, i::AbstractVector, j::AbstractVector)
 	V = W.U ≡ W.V' && i == j ? U' : W.V[:, j]
 	return Woodbury(A, U, W.C, V, W.α, nothing)
 end
-function Base.view(W::Woodbury, i, j) # WARNING: this also takes temporaries
+
+# WARNING: result of view references existing temporaries and is therefore not thread-safe
+function Base.view(W::Woodbury, i, j)
 	A = view(W.A, i, j)
 	U = view(W.U, i, :)
 	V = W.U ≡ W.V' && i == j ? U' : view(W.V, :, j)
@@ -165,7 +173,13 @@ function Base.view(W::Woodbury, i, j) # WARNING: this also takes temporaries
 end
 function LinearAlgebra.tr(W::Woodbury)
 	n = checksquare(W)
-	return tr(W.A) + W.α * tr(LowRank(W.U*W.C, W.V))
+	trace_UCV = zero(eltype(W))
+	for i in 1:n
+		ui = @view W.U[i, :]
+		vi = @view W.V[:, i]
+		trace_UCV += dot(ui, W.C, vi)
+	end
+	return tr(W.A) + W.α * trace_UCV
 end
 
 ######################## Linear Algebra primitives #############################

@@ -3,7 +3,6 @@ using WoodburyIdentity
 using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
 using LazyInverse: inverse, Inverse
 using LinearAlgebra
-using LinearAlgebraExtensions: LowRank
 using Test
 
 function getW(n, m; diagonal = true, symmetric = false)
@@ -148,9 +147,7 @@ end
 
     # LowRank constructor
     U = randn(n, 1)
-    L = LowRank(U, U')
-    A = Matrix(L)
-    W = Woodbury(I(n), L)
+    W = Woodbury(I(n), U, U')
 
     # CholeskyPivoted constructor
     A = randn(1, n)
