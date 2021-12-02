@@ -4,7 +4,7 @@ using LinearAlgebra: checksquare
 
 # IDEA: can optimize threshold constant c which makes WoodburyIdentity computationally beneficial
 # using LazyArrays: applied, ApplyMatrix
-import LazyInverse: inverse, Inverse
+using LazyInverses
 
 const AbstractMatOrFac{T} = Union{AbstractMatrix{T}, Factorization{T}}
 export Woodbury
@@ -12,7 +12,7 @@ export Woodbury
 # represents A + αUCV
 # things that prevent C from being a scalar: checkdims, factorize, ...
 # the α is beneficial to preserve p.s.d.-ness during inversion (see inverse)
-struct Woodbury{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
+struct WoodburyFactorization{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
     A::AT
     U::UT
     C::CT
@@ -21,7 +21,7 @@ struct Woodbury{T, AT, UT, CT, VT, F, L, TT} <: Factorization{T}
 	logabsdet::L
 	temporaries::TT
 end
-
+const Woodbury = WoodburyFactorization
 function Woodbury(A::AbstractMatOrFac, U::AbstractMatOrFac,
 				  C::AbstractMatOrFac, V::AbstractMatOrFac,
 				  α::Real = 1, logabsdet::Union{NTuple{2, Real}, Nothing} = nothing,
@@ -134,11 +134,11 @@ end
 LinearAlgebra.ishermitian(W::Woodbury) = _ishermitian(W) || ishermitian(Matrix(W))
 LinearAlgebra.issymmetric(W::Woodbury) = eltype(W) <: Real && ishermitian(W)
 
-# type piracy, to incorporate into Base
-LinearAlgebra.logabsdet(x::Number) = log(abs(x)), sign(x)
-LinearAlgebra.logabsdet(x::Cholesky) = logdet(x), one(eltype(x))
-LinearAlgebra.logabsdet(x::CholeskyPivoted) = logdet(x), one(eltype(x))
+# type piracy, are moving into Base of Julia 1.8
+LinearAlgebra.logabsdet(C::Union{Cholesky, CholeskyPivoted}) = logdet(C), one(eltype(C))
 LinearAlgebra.adjoint(x::Union{Cholesky, CholeskyPivoted}) = x
+
+LinearAlgebra.logabsdet(x::Number) = log(abs(x)), sign(x)
 LinearAlgebra.factorize(x::Number) = x
 
 function LinearAlgebra.isposdef(W::Woodbury)
@@ -183,6 +183,7 @@ function LinearAlgebra.tr(W::Woodbury)
 end
 
 ######################## Linear Algebra primitives #############################
+# IDEA: have efficient methods of hermitian WoodburyIdentity
 Base.:*(a::Number, W::Woodbury) = Woodbury(a*W.A, W.U, a*W.C, W.V, W.α) # IDEA: could take over logabsdet efficiently
 Base.:*(W::Woodbury, a::Number) = a*W
 

@@ -1,7 +1,7 @@
 module TestWoodburyIdentity
 using WoodburyIdentity
 using WoodburyIdentity: Woodbury, eltype, issymmetric, ishermitian
-using LazyInverse: inverse, Inverse
+using LazyInverses
 using LinearAlgebra
 using Test
 
